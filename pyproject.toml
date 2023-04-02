@@ -2,7 +2,7 @@
 name = "github_api"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
+authors = ["Ben Du <longendu@yahoo.com>"]
 readme = "README.md"
 packages = [{include = "github_api"}]
 
