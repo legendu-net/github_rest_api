@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "github_api"
+name = "github_rest_api"
 version = "0.1.0"
-description = ""
+description = "Simple wrapper of GitHub REST APIs."
 authors = ["Ben Du <longendu@yahoo.com>"]
 readme = "README.md"
-packages = [{include = "github_api"}]
+packages = [{include = "github_rest_api"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10"
