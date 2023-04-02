@@ -105,5 +105,5 @@ class Repository:
             timeout=10,
         )
         if not resp.ok:
-            resp.raise_for_status
+            raise resp.raise_for_status
         return resp.json()
