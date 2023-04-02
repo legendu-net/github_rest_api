@@ -94,10 +94,15 @@ class Repository:
             return
         self.merge_pull_request(pr["number"])
 
-    def list_pull_request_files(self, pr_number: int):
+    def list_pull_request_files(self, pr_number: int) -> dict[str, str]:
+        """List changed files in the specified GitHub pull request.
+
+        :param pr_number: The number of the pull request.
+        """
         resp = requests.get(
             url=f"{self._url_pull}/{pr_number}/files",
             headers=self._headers,
+            timeout=10,
         )
         if not resp.ok:
             resp.raise_for_status
