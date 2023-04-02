@@ -1,0 +1,9 @@
+image: dclong/gitpod
+ports:
+  - port: 8888
+tasks:
+  - command: . /scripts/gitpod.sh
+vscode:
+  extensions:
+    - vscodevim.vim
+    - ms-python.python

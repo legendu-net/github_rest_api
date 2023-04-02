@@ -26,5 +26,5 @@ def create_branch(branch: str) -> None:
 
 def switch_branch(branch: str) -> None:
     """Switch to another branch."""
-    cmd = f"git fetch origin && git checkout {branch}"
+    cmd = f"git fetch origin {branch} && git checkout {branch}"
     sp.run(cmd, shell=True, check=True)

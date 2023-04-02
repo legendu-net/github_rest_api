@@ -1,13 +1,14 @@
 [tool.poetry]
 name = "github_rest_api"
-version = "0.3.0"
+version = "0.5.0"
 description = "Simple wrapper of GitHub REST APIs."
 authors = ["Ben Du <longendu@yahoo.com>"]
 readme = "README.md"
 packages = [{include = "github_rest_api"}]
 
 [tool.poetry.dependencies]
-python = ">=3.10"
+python = ">=3.10,<4"
+requests = ">=2.28.2"
 
 
 [tool.pylint.master]
