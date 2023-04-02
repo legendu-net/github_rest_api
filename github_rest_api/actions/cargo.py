@@ -1,9 +1,10 @@
 """Benchmark action using cargo criterion.
 """
 from pathlib import Path
+import random
 import shutil
 import subprocess as sp
-from .utils import config_git, switch_branch
+from .utils import config_git, create_branch, switch_branch
 
 
 def _gen_temp_branch() -> str:
@@ -11,7 +12,7 @@ def _gen_temp_branch() -> str:
     return "_branch_" + "".join(str(num) for num in nums)
 
 
-def _copy_last_dev_bench(branch: str) -> None:
+def _copy_last_dev_bench() -> None:
     branch = _gen_temp_branch()
     create_branch(branch)
     switch_branch("gh-pages")
