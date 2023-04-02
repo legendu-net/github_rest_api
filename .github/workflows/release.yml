@@ -1,0 +1,33 @@
+name: release
+on:
+  push:
+    tags:
+      - v*
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Install Poetry
+        run: |
+          pip3 install -U git+https://github.com/dclong/xinstall@main
+          xinstall pt -ic
+      - name: Build and Pubblish Package to PyPI
+        run: |
+          ~/.local/bin/poetry publish --build -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
+          ls -lha dist/
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
+          files: |
+            dist/*
