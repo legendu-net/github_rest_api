@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "github_api"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "github_api"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+
+
+[tool.pylint.master]
+ignore = ".venv,.ipynb_checkpoints"
+unsafe-load-any-extension = "no"
+extension-pkg-whitelist = "numpy,cv2,pyspark"
+generated-members = "sqlite3.*,cv2.*,pyspark.*"
+ignored-modules = "pyspark.sql.functions"
+
+[tool.pylint.typecheck]
+ignored-classes = "Namespace"
+
+[tool.pylint.messages_control]
+disable = "C0103,C0200,C0301,C0303,R0902,R0903,R0911,R0912,R0913,W0621,W0622,W0702,W0703,W1116"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

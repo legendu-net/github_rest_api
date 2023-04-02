@@ -1,0 +1,30 @@
+"""Util functions for GitHub actions.
+"""
+import subprocess as sp
+
+
+def config_git(root_dir: str, user_email: str, user_name: str):
+    """Config Git.
+    :param root_dir: The root directory of the project.
+    :param user_email: The email of the user (no need to be a valid one).
+    :param user_name: The name of the user.
+    """
+    cmd = f"""git config --global --add safe.directory {root_dir} \
+            && git config --global user.email "{user_email}" \
+            && git config --global user.name "{user_name}"
+        """
+    sp.run(cmd, shell=True, check=True)
+
+
+def create_branch(branch: str) -> None:
+    """Create a new local branch.
+    :param branch: The new local branch to create.
+    """
+    cmd = f"git checkout -b {branch}"
+    sp.run(cmd, shell=True, check=True)
+
+
+def switch_branch(branch: str) -> None:
+    """Switch to another branch."""
+    cmd = f"git fetch origin && git checkout {branch}"
+    sp.run(cmd, shell=True, check=True)
