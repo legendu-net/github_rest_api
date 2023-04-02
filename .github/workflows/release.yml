@@ -25,9 +25,10 @@ jobs:
         run: |
           ~/.local/bin/poetry publish --build -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
           ls -lha dist/
-      - uses: "marvinpinto/action-automatic-releases@latest"
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: false
-          files: |
-            dist/*
+      # - uses: "marvinpinto/action-automatic-releases@latest"
+      #   with:
+      #     repo_token: ${{ secrets.GITHUB_TOKEN }}
+      #     automatic_release_tag: "latest"
+      #     prerelease: false
+      #     files: |
+      #       dist/*
