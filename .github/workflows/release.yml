@@ -1,8 +1,8 @@
 name: release
 on:
   push:
-    tags:
-      - v*
+    branches:
+      - main
 jobs:
   release:
     name: Release
@@ -21,7 +21,7 @@ jobs:
         run: |
           pip3 install -U git+https://github.com/dclong/xinstall@main
           xinstall pt -ic
-      - name: Build and Pubblish Package to PyPI
+      - name: Build and Publish Package to PyPI
         run: |
           ~/.local/bin/poetry publish --build -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
           ls -lha dist/
