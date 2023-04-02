@@ -29,13 +29,13 @@ class Repository:
         self.owner = owner
         self.repo = repo
         self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
-        self._header = build_http_headers(token)
+        self._headers = build_http_headers(token)
 
     def list_pull_requests(self) -> list[dict]:
         """List pull requests in this repository."""
         resp = requests.get(
             url=self._url_pull,
-            headers=self._header,
+            headers=self._headers,
             timeout=10,
         )
         if not resp.ok:
@@ -58,7 +58,7 @@ class Repository:
         # creat a new PR
         resp = requests.post(
             url=self._url_pull,
-            headers=self._header,
+            headers=self._headers,
             data=json.dumps(data),
             timeout=10,
         )
@@ -72,7 +72,7 @@ class Repository:
         """
         resp = requests.put(
             url=f"{self._url_pull}/{pr_number}/merge",
-            headers=self._header,
+            headers=self._headers,
             timeout=10,
         )
         if not resp.ok:
@@ -93,3 +93,12 @@ class Repository:
         if pr is None:
             return
         self.merge_pull_request(pr["number"])
+
+    def list_pull_request_files(self, pr_number: int):
+        resp = requests.get(
+            url=f"{self._url_pull}/{pr_number}/files",
+            headers=self._headers,
+        )
+        if not resp.ok:
+            resp.raise_for_status
+        return resp.json()
