@@ -6,7 +6,14 @@ import subprocess as sp
 from .utils import config_git, switch_branch
 
 
+def _gen_temp_branch() -> str:
+    nums = random.sample(range(10), 10)
+    return "_branch_" + "".join(str(num) for num in nums)
+
+
 def _copy_last_dev_bench(branch: str) -> None:
+    branch = _gen_temp_branch()
+    create_branch(branch)
     switch_branch("gh-pages")
     src = Path("dev/criterion")
     if src.is_dir():
@@ -16,12 +23,12 @@ def _copy_last_dev_bench(branch: str) -> None:
     switch_branch(branch)
 
 
-def _cargo_criterion(branch: str) -> None:
+def _cargo_criterion() -> None:
     """Run `cargo criterion` to benchmark the specified branch.
 
     :param branch: The branch to benchmark.
     """
-    _copy_last_dev_bench(branch)
+    _copy_last_dev_bench()
     cmd = "cargo criterion --message-format=json"
     sp.run(cmd, shell=True, check=True)
 
@@ -155,13 +162,13 @@ def _gen_markdown(dirs: list[Path]) -> str:
     return f"# [poker-rs](https://github.com/fun-poker-game/poker-rs)\n{sections}\n"
 
 
-def benchmark(dir_: str, branch: str, user_email: str, user_name: str):
+def benchmark(dir_: str, user_email: str, user_name: str):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
     :param dir_: _description_
     """
     config_git(root_dir=dir_, user_email=user_email, user_name=user_name)
-    _cargo_criterion(branch)
+    _cargo_criterion()
     _copy_bench_results(dir_=dir_)
     dirs = _get_bench_dirs()
     _rename_bench_reports(dirs)
