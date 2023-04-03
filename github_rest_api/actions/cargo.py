@@ -34,18 +34,25 @@ def _cargo_criterion() -> None:
     sp.run(cmd, shell=True, check=True)
 
 
-def _copy_bench_results(dir_: str | Path) -> None:
+def _copy_bench_results(bench_dir: Path, pr_merge_name: str) -> None:
+    """Copy benchmark results into the right directory.
+    :param bench_dir: The root benchmark directory
+    (under the gh-pages branch).
+    :param pr_merge_name: The corresponding PR merge name.
+    """
     switch_branch("gh-pages")
-    if isinstance(dir_, str):
-        dir_ = Path(dir_)
     src = Path("target/criterion")
-    dst = dir_ / "criterion"
+    dst = bench_dir / pr_merge_name / "criterion"
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
-def _git_push_gh_pages(dir_: str | Path) -> None:
-    cmd = f"""git add index.md {dir_} \
+def _git_push_gh_pages(bench_dir: Path) -> None:
+    """Push benchmark results to gh-pages.
+    :param bench_dir: The root benchmark directory
+    (under the gh-pages branch).
+    """
+    cmd = f"""git add {bench_dir} \
         && git commit -m 'add benchmarks' \
         && git push origin gh-pages
         """
@@ -151,9 +158,11 @@ def _sort_cips(
     return sorted(cips, key=_avg_perf_change)
 
 
-def _get_bench_dirs() -> list[Path]:
-    dirs = list(p / "merge" for p in Path(".").glob("[1-9]*/"))
-    dirs.sort()
+def _clean_bench_dirs(bench_dir: Path, history: int) -> list[Path]:
+    dirs = sorted(p / "merge" for p in bench_dir.glob("[1-9]*/"))
+    for path in dirs[:-history]:
+        shutil.rmtree(path)
+    dirs = dirs[-history:]
     dirs.append(Path("dev"))
     return dirs
 
@@ -163,21 +172,35 @@ def _gen_markdown(owner: str, repo: str, dirs: list[Path]) -> str:
     return f"# [{repo} Benchmarks](https://github.com/{owner}/{repo})\n{sections}\n"
 
 
-def benchmark(owner: str, repo: str, root_dir: str):
+def benchmark(
+    owner: str,
+    repo: str,
+    local_repo_dir: str,
+    bench_dir: str | Path,
+    pr_merge_name: str,
+    history: int = 20,
+):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
     :param owner: The owner of the repository.
     :param repo: The name of the repository.
-    :param root_dir: Root directory of the local repository.
+    :param local_repo_dir: Root directory of the local repository.
+    :param bench_dir: The root benchmark directory (under the gh-pages branch).
+    :param pr_merge_name: The corresponding PR merge name.
+    :param history: The number of historical benchmark results to keep.
     """
+    if isinstance(bench_dir, str):
+        bench_dir = Path(bench_dir)
     config_git(
-        root_dir=root_dir, user_email=f"bench-bot@{repo}.com", user_name="bench-bot"
+        local_repo_dir=local_repo_dir,
+        user_email=f"bench-bot@{repo}.com",
+        user_name="bench-bot",
     )
     _cargo_criterion()
-    _copy_bench_results(dir_=root_dir)
-    dirs = _get_bench_dirs()
+    _copy_bench_results(bench_dir=bench_dir, pr_merge_name=pr_merge_name)
+    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
-    Path("bench.md").write_text(
+    (bench_dir / "index.md").write_text(
         _gen_markdown(owner=owner, repo=repo, dirs=dirs), encoding="utf-8"
     )
-    _git_push_gh_pages(root_dir)
+    _git_push_gh_pages(bench_dir=bench_dir)
