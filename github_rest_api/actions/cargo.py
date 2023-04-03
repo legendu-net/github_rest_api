@@ -200,7 +200,7 @@ def benchmark(
     _copy_bench_results(bench_dir=bench_dir, pr_merge_name=pr_merge_name)
     dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
-    (bench_dir / "bench.md").write_text(
+    (bench_dir / "index.md").write_text(
         _gen_markdown(owner=owner, repo=repo, dirs=dirs), encoding="utf-8"
     )
     _git_push_gh_pages(bench_dir=bench_dir)
