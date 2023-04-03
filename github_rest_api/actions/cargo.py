@@ -158,20 +158,24 @@ def _get_bench_dirs() -> list[Path]:
     return dirs
 
 
-def _gen_markdown(dirs: list[Path]) -> str:
+def _gen_markdown(dirs: list[Path], owner: str, repo: str) -> str:
     sections = "\n".join(_gen_report_links_markdown(dir_) for dir_ in reversed(dirs))
-    return f"# [poker-rs](https://github.com/fun-poker-game/poker-rs)\n{sections}\n"
+    return f"# [{repo} Benchmarks](https://github.com/{owner}/{repo})\n{sections}\n"
 
 
-def benchmark(dir_: str, user_email: str, user_name: str):
+def benchmark(owner: str, repo: str, root_dir: str):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
-    :param dir_: _description_
+    :param owner: The owner of the repository.
+    :param repo: The name of the repository.
+    :param root_dir: Root directory of the local repository.
     """
-    config_git(root_dir=dir_, user_email=user_email, user_name=user_name)
+    config_git(
+        root_dir=root_dir, user_email=f"bench-bot@{repo}.com", user_name="bench-bot"
+    )
     _cargo_criterion()
-    _copy_bench_results(dir_=dir_)
+    _copy_bench_results(dir_=root_dir)
     dirs = _get_bench_dirs()
     _rename_bench_reports(dirs)
-    Path("index.md").write_text(_gen_markdown(dirs), encoding="utf-8")
-    _git_push_gh_pages(dir_)
+    Path("bench.md").write_text(_gen_markdown(dirs, owner, repo), encoding="utf-8")
+    _git_push_gh_pages(root_dir)
