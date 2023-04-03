@@ -34,7 +34,7 @@ def _cargo_criterion() -> None:
     sp.run(cmd, shell=True, check=True)
 
 
-def _copy_bench_results(bench_dir: Path, pr_merge_name: str) -> None:
+def _copy_bench_results(bench_dir: Path, storage: str) -> None:
     """Copy benchmark results into the right directory.
     :param bench_dir: The root benchmark directory
     (under the gh-pages branch).
@@ -42,7 +42,7 @@ def _copy_bench_results(bench_dir: Path, pr_merge_name: str) -> None:
     """
     switch_branch("gh-pages")
     src = Path("target/criterion")
-    dst = bench_dir / pr_merge_name / "criterion"
+    dst = bench_dir / storage / "criterion"
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
@@ -178,6 +178,7 @@ def benchmark(
     local_repo_dir: str,
     bench_dir: str | Path,
     pr_merge_name: str,
+    storage: str = "",
     history: int = 20,
 ):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
@@ -187,17 +188,21 @@ def benchmark(
     :param local_repo_dir: Root directory of the local repository.
     :param bench_dir: The root benchmark directory (under the gh-pages branch).
     :param pr_merge_name: The corresponding PR merge name.
+    :param storage: The directory relative to bench_dir for storing this benchmark results.
+    If not specified (empty or None), pr_merge_name is used.
     :param history: The number of historical benchmark results to keep.
     """
     if isinstance(bench_dir, str):
         bench_dir = Path(bench_dir)
+    if not storage:
+        storage = pr_merge_name
     config_git(
         local_repo_dir=local_repo_dir,
         user_email=f"bench-bot@{repo}.com",
         user_name="bench-bot",
     )
     _cargo_criterion()
-    _copy_bench_results(bench_dir=bench_dir, pr_merge_name=pr_merge_name)
+    _copy_bench_results(bench_dir=bench_dir, storage=storage)
     dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
     (bench_dir / "index.md").write_text(
