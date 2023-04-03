@@ -3,13 +3,13 @@
 import subprocess as sp
 
 
-def config_git(root_dir: str, user_email: str, user_name: str):
+def config_git(local_repo_dir: str, user_email: str, user_name: str):
     """Config Git.
-    :param root_dir: The root directory of the project.
+    :param local_repo_dir: The root directory of the project.
     :param user_email: The email of the user (no need to be a valid one).
     :param user_name: The name of the user.
     """
-    cmd = f"""git config --global --add safe.directory {root_dir} \
+    cmd = f"""git config --global --add safe.directory {local_repo_dir} \
             && git config --global user.email "{user_email}" \
             && git config --global user.name "{user_name}"
         """
