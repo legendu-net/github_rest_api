@@ -158,7 +158,7 @@ def _get_bench_dirs() -> list[Path]:
     return dirs
 
 
-def _gen_markdown(dirs: list[Path], owner: str, repo: str) -> str:
+def _gen_markdown(owner: str, repo: str, dirs: list[Path]) -> str:
     sections = "\n".join(_gen_report_links_markdown(dir_) for dir_ in reversed(dirs))
     return f"# [{repo} Benchmarks](https://github.com/{owner}/{repo})\n{sections}\n"
 
@@ -177,5 +177,7 @@ def benchmark(owner: str, repo: str, root_dir: str):
     _copy_bench_results(dir_=root_dir)
     dirs = _get_bench_dirs()
     _rename_bench_reports(dirs)
-    Path("bench.md").write_text(_gen_markdown(dirs, owner, repo), encoding="utf-8")
+    Path("bench.md").write_text(
+        _gen_markdown(owner=owner, repo=repo, dirs=dirs), encoding="utf-8"
+    )
     _git_push_gh_pages(root_dir)
