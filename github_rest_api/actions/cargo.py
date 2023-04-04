@@ -15,13 +15,13 @@ def _gen_temp_branch() -> str:
 def _copy_last_dev_bench() -> None:
     branch = _gen_temp_branch()
     create_branch(branch)
-    switch_branch("gh-pages")
+    switch_branch(branch="gh-pages", fetch=True)
     src = Path("dev/criterion")
     if src.is_dir():
         target = Path("target/criterion")
         target.mkdir(parents=True, exist_ok=True)
         shutil.copytree(src, target, dirs_exist_ok=True)
-    switch_branch(branch)
+    switch_branch(branch=branch, fetch=False)
 
 
 def _cargo_criterion() -> None:
@@ -40,7 +40,7 @@ def _copy_bench_results(bench_dir: Path, storage: str) -> None:
     (under the gh-pages branch).
     :param pr_merge_name: The corresponding PR merge name.
     """
-    switch_branch("gh-pages")
+    switch_branch("gh-pages", fetch=True)
     src = Path("target/criterion")
     dst = bench_dir / storage / "criterion"
     dst.mkdir(parents=True, exist_ok=True)
