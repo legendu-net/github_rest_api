@@ -24,7 +24,13 @@ def create_branch(branch: str) -> None:
     sp.run(cmd, shell=True, check=True)
 
 
-def switch_branch(branch: str) -> None:
-    """Switch to another branch."""
-    cmd = f"git fetch origin {branch} && git checkout {branch}"
+def switch_branch(branch: str, fetch: bool) -> None:
+    """Switch to another branch.
+    :param branch: The branch to checkout.
+    :param fetch: If true, fetch the branch from remote first.
+    """
+    if fetch:
+        cmd = f"git fetch origin {branch}"
+        sp.run(cmd, shell=True, check=True)
+    cmd = f"git checkout {branch}"
     sp.run(cmd, shell=True, check=True)
