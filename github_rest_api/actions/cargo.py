@@ -38,7 +38,7 @@ def _copy_bench_results(bench_dir: Path, storage: str) -> None:
     """Copy benchmark results into the right directory.
     :param bench_dir: The root benchmark directory
     (under the gh-pages branch).
-    :param pr_merge_name: The corresponding PR merge name.
+    :param storage: The directory relative to bench_dir for storing this benchmark results.
     """
     switch_branch("gh-pages", fetch=True)
     src = Path("target/criterion")
@@ -159,7 +159,7 @@ def _sort_cips(
 
 
 def _clean_bench_dirs(bench_dir: Path, history: int) -> list[Path]:
-    dirs = sorted(p / "merge" for p in bench_dir.glob("[1-9]*/"))
+    dirs = sorted(bench_dir.glob("[1-9]*/"))
     for path in dirs[:-history]:
         shutil.rmtree(path)
     dirs = dirs[-history:]
@@ -177,7 +177,7 @@ def benchmark(
     repo: str,
     local_repo_dir: str,
     bench_dir: str | Path,
-    pr_merge_name: str,
+    pr_number: str,
     storage: str = "",
     history: int = 20,
 ):
@@ -187,15 +187,15 @@ def benchmark(
     :param repo: The name of the repository.
     :param local_repo_dir: Root directory of the local repository.
     :param bench_dir: The root benchmark directory (under the gh-pages branch).
-    :param pr_merge_name: The corresponding PR merge name.
+    :param pr_number: The number of the corresponding PR.
     :param storage: The directory relative to bench_dir for storing this benchmark results.
-    If not specified (empty or None), pr_merge_name is used.
+    If not specified (empty or None), pr_number is used.
     :param history: The number of historical benchmark results to keep.
     """
     if isinstance(bench_dir, str):
         bench_dir = Path(bench_dir)
     if not storage:
-        storage = pr_merge_name
+        storage = pr_number
     config_git(
         local_repo_dir=local_repo_dir,
         user_email=f"bench-bot@{repo}.com",
