@@ -12,11 +12,11 @@ def _gen_temp_branch() -> str:
     return "_branch_" + "".join(str(num) for num in nums)
 
 
-def _copy_last_dev_bench() -> None:
+def _copy_last_dev_bench(bench_dir: Path) -> None:
     branch = _gen_temp_branch()
     create_branch(branch)
     switch_branch(branch="gh-pages", fetch=True)
-    src = Path("dev/criterion")
+    src = bench_dir / "dev/criterion"
     if src.is_dir():
         target = Path("target/criterion")
         target.mkdir(parents=True, exist_ok=True)
@@ -24,12 +24,12 @@ def _copy_last_dev_bench() -> None:
     switch_branch(branch=branch, fetch=False)
 
 
-def _cargo_criterion() -> None:
+def _cargo_criterion(bench_dir: Path) -> None:
     """Run `cargo criterion` to benchmark the specified branch.
 
     :param branch: The branch to benchmark.
     """
-    _copy_last_dev_bench()
+    _copy_last_dev_bench(bench_dir=bench_dir)
     cmd = "cargo criterion --message-format=json"
     sp.run(cmd, shell=True, check=True)
 
@@ -203,7 +203,7 @@ def benchmark(
         user_email=f"bench-bot@{repo}.com",
         user_name="bench-bot",
     )
-    _cargo_criterion()
+    _cargo_criterion(bench_dir=bench_dir)
     _copy_bench_results(bench_dir=bench_dir, storage=storage)
     dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
