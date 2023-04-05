@@ -163,7 +163,9 @@ def _clean_bench_dirs(bench_dir: Path, history: int) -> list[Path]:
     for path in dirs[:-history]:
         shutil.rmtree(path)
     dirs = dirs[-history:]
-    dirs.append(Path("dev"))
+    dev = bench_dir / "dev"
+    if dev.is_dir():
+        dirs.append(dev)
     return dirs
 
 
