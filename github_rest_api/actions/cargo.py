@@ -169,14 +169,12 @@ def _clean_bench_dirs(bench_dir: Path, history: int) -> list[Path]:
     return dirs
 
 
-def _gen_markdown(owner: str, repo: str, dirs: list[Path]) -> str:
+def _gen_markdown(dirs: list[Path]) -> str:
     sections = "\n".join(_gen_report_links_markdown(dir_) for dir_ in reversed(dirs))
-    return f"# [{repo} Benchmarks](https://github.com/{owner}/{repo})\n{sections}\n"
+    return f"# Benchmarks\n{sections}\n"
 
 
 def benchmark(
-    owner: str,
-    repo: str,
     local_repo_dir: str,
     bench_dir: str | Path,
     pr_number: str,
@@ -185,8 +183,6 @@ def benchmark(
 ):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
-    :param owner: The owner of the repository.
-    :param repo: The name of the repository.
     :param local_repo_dir: Root directory of the local repository.
     :param bench_dir: The root benchmark directory (under the gh-pages branch).
     :param pr_number: The number of the corresponding PR.
@@ -200,14 +196,12 @@ def benchmark(
         storage = pr_number
     config_git(
         local_repo_dir=local_repo_dir,
-        user_email=f"bench-bot@{repo}.com",
+        user_email="bench-bot@github.com",
         user_name="bench-bot",
     )
     _cargo_criterion(bench_dir=bench_dir)
     _copy_bench_results(bench_dir=bench_dir, storage=storage)
     dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
-    (bench_dir / "index.md").write_text(
-        _gen_markdown(owner=owner, repo=repo, dirs=dirs), encoding="utf-8"
-    )
+    (bench_dir / "index.md").write_text(_gen_markdown(dirs=dirs), encoding="utf-8")
     _git_push_gh_pages(bench_dir=bench_dir)
