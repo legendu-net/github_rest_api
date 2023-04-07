@@ -1,15 +1,21 @@
 """Benchmark action using cargo criterion.
 """
+from typing import Iterable
 from pathlib import Path
 import random
 import shutil
 import subprocess as sp
+import string
 from .utils import config_git, create_branch, switch_branch
 
 
-def _gen_temp_branch(prefix: str = "_branch_") -> str:
-    nums = random.sample(range(10), 10)
-    return prefix + "".join(str(num) for num in nums)
+def _gen_temp_branch(
+    prefix: str = "_branch_", chars: Iterable[str | int] = range(10), nrand: int = 10
+) -> str:
+    if not isinstance(chars, (list, tuple)):
+        chars = list(chars)
+    chars = random.sample(chars, nrand)
+    return prefix + "".join(str(char) for char in chars)
 
 
 def _copy_last_dev_bench(bench_dir: Path) -> None:
@@ -56,7 +62,7 @@ class FailToPushToGitHubException(Exception):
         )
 
 
-def _git_push_gh_pages(bench_dir: Path) -> None:
+def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
     """Push benchmark results to gh-pages.
     :param bench_dir: The root benchmark directory
     (under the gh-pages branch).
@@ -67,7 +73,9 @@ def _git_push_gh_pages(bench_dir: Path) -> None:
     try:
         sp.run(cmd, shell=True, check=True)
     except Exception as err:
-        branch = _gen_temp_branch(prefix="gh-pages_")
+        branch = _gen_temp_branch(
+            prefix=f"gh-pages_{pr_number}_", chars=string.ascii_lowercase, nrand=3
+        )
         cmd = f"git checkout -b {branch} && git push origin {branch}"
         sp.run(cmd, shell=True, check=True)
         raise FailToPushToGitHubException("gh-pages", branch) from err
@@ -218,4 +226,4 @@ def benchmark(
     dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
     (bench_dir / "index.md").write_text(_gen_markdown(dirs=dirs), encoding="utf-8")
-    _git_push_gh_pages(bench_dir=bench_dir)
+    _git_push_gh_pages(bench_dir=bench_dir, pr_number=pr_number)
