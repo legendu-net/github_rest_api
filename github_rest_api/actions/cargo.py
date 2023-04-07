@@ -7,9 +7,9 @@ import subprocess as sp
 from .utils import config_git, create_branch, switch_branch
 
 
-def _gen_temp_branch() -> str:
+def _gen_temp_branch(prefix: str = "_branch_") -> str:
     nums = random.sample(range(10), 10)
-    return "_branch_" + "".join(str(num) for num in nums)
+    return prefix + "".join(str(num) for num in nums)
 
 
 def _copy_last_dev_bench(bench_dir: Path) -> None:
@@ -47,16 +47,30 @@ def _copy_bench_results(bench_dir: Path, storage: str) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
+class FailToPushToGitHubException(Exception):
+    """Exception for failure to push a branch to GitHub."""
+
+    def __init__(self, branch: str, branch_alt):
+        super().__init__(
+            f"Failed to push the branch {branch} to GitHub! Pushed to {branch_alt} instead."
+        )
+
+
 def _git_push_gh_pages(bench_dir: Path) -> None:
     """Push benchmark results to gh-pages.
     :param bench_dir: The root benchmark directory
     (under the gh-pages branch).
     """
-    cmd = f"""git add {bench_dir} \
-        && git commit -m 'add benchmarks' \
-        && git push origin gh-pages
-        """
+    cmd = f"git add {bench_dir} && git commit -m 'add benchmarks'"
     sp.run(cmd, shell=True, check=True)
+    cmd = "git push origin gh-pages"
+    try:
+        sp.run(cmd, shell=True, check=True)
+    except Exception as err:
+        branch = _gen_temp_branch(prefix="gh-pages_")
+        cmd = f"git checkout -b {branch} && git push origin {branch}"
+        sp.run(cmd, shell=True, check=True)
+        raise FailToPushToGitHubException("gh-pages", branch) from err
 
 
 def _rename_bench_reports(dirs: list[Path]):
