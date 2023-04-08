@@ -1,6 +1,6 @@
 """Benchmark action using cargo criterion.
 """
-from typing import Iterable
+from typing import Iterable, Callable
 from pathlib import Path
 import random
 import shutil
@@ -119,15 +119,22 @@ def _parse_metric_ci(path: str | Path) -> tuple[str, str, str]:
     return (lower, middle, upper)
 
 
-def _gen_report_links_markdown(dir_: str | Path) -> str:
+def _gen_report_links_markdown(
+    dir_: str | Path, extract_benchmark_name: Callable
+) -> str:
     if isinstance(dir_, str):
         dir_ = Path(dir_)
     paths = (dir_ / "criterion/reports").iterdir()
     paths = list(path for path in paths if path.is_dir())
     paths.sort()
     cips = [(_parse_metric_ci(p), p) for p in paths]
-    links = "\n".join(_gen_report_link_markdown(cip) for cip in cips)
-    links_sorted = "\n".join(_gen_report_link_markdown(cip) for cip in _sort_cips(cips))
+    links = "\n".join(
+        _gen_report_link_markdown(cip, extract_benchmark_name) for cip in cips
+    )
+    links_sorted = "\n".join(
+        _gen_report_link_markdown(cip, extract_benchmark_name)
+        for cip in _sort_cips(cips)
+    )
     return f"""## {dir_} - Sorted By Performance Change
 {links_sorted}
 ## {dir_} - Sorted By Name
@@ -135,11 +142,14 @@ def _gen_report_links_markdown(dir_: str | Path) -> str:
 """
 
 
-def _gen_report_link_markdown(cip: tuple[tuple[str, str, str], Path]) -> str:
+def _gen_report_link_markdown(
+    cip: tuple[tuple[str, str, str], Path], extract_benchmark_name: Callable
+) -> str:
     ci, p = cip
 
     def _gen_link_md(path: Path):
-        text = path.stem.replace(" __ ", " << ").replace("__", "::")
+        text = extract_benchmark_name(path)
+        path = "/".join(path.parts[1:])
         link = f"{path}/index.html"
         return f"[{text}]({link})"
 
@@ -191,8 +201,11 @@ def _clean_bench_dirs(bench_dir: Path, history: int) -> list[Path]:
     return dirs
 
 
-def _gen_markdown(dirs: list[Path]) -> str:
-    sections = "\n".join(_gen_report_links_markdown(dir_) for dir_ in reversed(dirs))
+def _gen_markdown(dirs: list[Path], extract_benchmark_name) -> str:
+    sections = "\n".join(
+        _gen_report_links_markdown(dir_, extract_benchmark_name)
+        for dir_ in reversed(dirs)
+    )
     return f"# Benchmarks\n{sections}\n"
 
 
@@ -202,6 +215,7 @@ def benchmark(
     pr_number: str,
     storage: str = "",
     history: int = 20,
+    extract_benchmark_name: Callable = lambda path: path.stem,
 ):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
@@ -225,5 +239,7 @@ def benchmark(
     _copy_bench_results(bench_dir=bench_dir, storage=storage)
     dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
     _rename_bench_reports(dirs)
-    (bench_dir / "index.md").write_text(_gen_markdown(dirs=dirs), encoding="utf-8")
+    (bench_dir / "index.md").write_text(
+        _gen_markdown(dirs, extract_benchmark_name), encoding="utf-8"
+    )
     _git_push_gh_pages(bench_dir=bench_dir, pr_number=pr_number)
