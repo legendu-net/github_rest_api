@@ -1,6 +1,18 @@
 """Util functions for GitHub actions.
 """
+from typing import Iterable
+import string
 import subprocess as sp
+import random
+
+
+class FailToPushToGitHubException(Exception):
+    """Exception for failure to push a branch to GitHub."""
+
+    def __init__(self, branch: str, branch_alt):
+        super().__init__(
+            f"Failed to push the branch {branch} to GitHub! Pushed to {branch_alt} instead."
+        )
 
 
 def config_git(local_repo_dir: str, user_email: str, user_name: str):
@@ -34,3 +46,34 @@ def switch_branch(branch: str, fetch: bool) -> None:
         sp.run(cmd, shell=True, check=True)
     cmd = f"git checkout {branch}"
     sp.run(cmd, shell=True, check=True)
+
+
+def gen_temp_branch(
+    prefix: str = "_branch_", chars: Iterable[str | int] = range(10), nrand: int = 10
+) -> str:
+    """Generate a name for a (temp) branch.
+    :param prefix: The prefix of the name.
+    :param chars: An iterable of characters to sample from to form the suffix of the name.
+    :param nrand: The number of characters for the suffix of the name.
+    """
+    if not isinstance(chars, (list, tuple)):
+        chars = list(chars)
+    chars = random.sample(chars, nrand)
+    return prefix + "".join(str(char) for char in chars)
+
+
+def push_gh_pages(name: str):
+    """Try pushing the local gh-pages branch.
+    On failure, fork a new branch and push it to GitHub.
+    :param name: A meaningful name as part of the name of the new branch.
+    """
+    cmd = "git push origin gh-pages"
+    try:
+        sp.run(cmd, shell=True, check=True)
+    except Exception as err:
+        branch = gen_temp_branch(
+            prefix=f"gh-pages_{name}_", chars=string.ascii_lowercase, nrand=3
+        )
+        cmd = f"git checkout -b {branch} && git push origin {branch}"
+        sp.run(cmd, shell=True, check=True)
+        raise FailToPushToGitHubException("gh-pages", branch) from err

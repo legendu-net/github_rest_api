@@ -1,25 +1,20 @@
 """Benchmark action using cargo criterion.
 """
-from typing import Iterable, Callable
+from typing import Callable
 from pathlib import Path
-import random
 import shutil
 import subprocess as sp
-import string
-from .utils import config_git, create_branch, switch_branch
-
-
-def _gen_temp_branch(
-    prefix: str = "_branch_", chars: Iterable[str | int] = range(10), nrand: int = 10
-) -> str:
-    if not isinstance(chars, (list, tuple)):
-        chars = list(chars)
-    chars = random.sample(chars, nrand)
-    return prefix + "".join(str(char) for char in chars)
+from .utils import (
+    config_git,
+    create_branch,
+    switch_branch,
+    push_gh_pages,
+    gen_temp_branch,
+)
 
 
 def _copy_last_dev_bench(bench_dir: Path) -> None:
-    branch = _gen_temp_branch()
+    branch = gen_temp_branch()
     create_branch(branch)
     switch_branch(branch="gh-pages", fetch=True)
     src = bench_dir / "dev/criterion"
@@ -53,15 +48,6 @@ def _copy_bench_results(bench_dir: Path, storage: str) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
-class FailToPushToGitHubException(Exception):
-    """Exception for failure to push a branch to GitHub."""
-
-    def __init__(self, branch: str, branch_alt):
-        super().__init__(
-            f"Failed to push the branch {branch} to GitHub! Pushed to {branch_alt} instead."
-        )
-
-
 def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
     """Push benchmark results to gh-pages.
     :param bench_dir: The root benchmark directory
@@ -69,16 +55,7 @@ def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
     """
     cmd = f"git add {bench_dir} && git commit -m 'add benchmarks'"
     sp.run(cmd, shell=True, check=True)
-    cmd = "git push origin gh-pages"
-    try:
-        sp.run(cmd, shell=True, check=True)
-    except Exception as err:
-        branch = _gen_temp_branch(
-            prefix=f"gh-pages_{pr_number}_", chars=string.ascii_lowercase, nrand=3
-        )
-        cmd = f"git checkout -b {branch} && git push origin {branch}"
-        sp.run(cmd, shell=True, check=True)
-        raise FailToPushToGitHubException("gh-pages", branch) from err
+    push_gh_pages(name=pr_number)
 
 
 def _rename_bench_reports(dirs: list[Path]):
