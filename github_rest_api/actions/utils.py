@@ -2,6 +2,7 @@
 """
 from typing import Iterable
 import string
+import datetime
 import subprocess as sp
 import random
 
@@ -77,3 +78,12 @@ def push_gh_pages(name: str):
         cmd = f"git checkout -b {branch} && git push origin {branch}"
         sp.run(cmd, shell=True, check=True)
         raise FailToPushToGitHubException("gh-pages", branch) from err
+
+
+def build_project(profile: str = "release") -> None:
+    """Build the Rust project.
+    :param profile: The profile for building.
+    """
+    cmd = f"RUSTFLAGS=-Awarnings cargo build --profile {profile}"
+    print("Started building at ", datetime.datetime.now(), sep="")
+    sp.run(cmd, shell=True, check=True)

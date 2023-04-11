@@ -4,7 +4,7 @@ from typing import Callable
 from pathlib import Path
 import shutil
 import subprocess as sp
-from .utils import (
+from ..utils import (
     config_git,
     create_branch,
     switch_branch,
