@@ -43,7 +43,7 @@ def nperf(pid: int, prof_name: str, prof_dir: str | Path = ".") -> Path:
     yymmdd = time.strftime("%Y%m%d")
     prof_dir.mkdir(exist_ok=True, parents=True)
     data_file = prof_dir / f"{yymmdd}_{prof_name}"
-    cmd = f"nperf record -p {pid} -o {data_file}"
+    cmd = f"nperf record -p {pid} -o '{data_file}'"
     print(
         "Started profiling at ",
         datetime.datetime.now(),
@@ -58,7 +58,7 @@ def nperf(pid: int, prof_name: str, prof_dir: str | Path = ".") -> Path:
 
 def _gen_flamegraph(data_file: Path) -> Path:
     flamegraph = data_file.with_name(data_file.name + ".svg")
-    cmd = f"nperf flamegraph {data_file} > {flamegraph}"
+    cmd = f"nperf flamegraph '{data_file}' > '{flamegraph}'"
     print(
         "Started generating flamegraph at ",
         datetime.datetime.now(),
