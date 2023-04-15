@@ -55,7 +55,8 @@ def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
     """
     cmd = f"git add {bench_dir} && git commit -m 'add benchmarks'"
     sp.run(cmd, shell=True, check=True)
-    push_gh_pages(name=pr_number)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    push_branch(branch=f"gh-pages_{pr_number}_{timestamp}")
 
 
 def _rename_bench_reports(dirs: list[Path]):
