@@ -1,9 +1,10 @@
 """Util functions for GitHub actions.
 """
-from typing import Iterable
+from typing import Iterable, Callable
 import datetime
 import subprocess as sp
 import random
+from ..github import Repository
 
 
 class FailToPushToGitHubException(Exception):
@@ -89,3 +90,22 @@ def build_project(profile: str = "release") -> None:
     cmd = f"RUSTFLAGS=-Awarnings cargo build --profile {profile}"
     print("Started building at ", datetime.datetime.now(), sep="")
     sp.run(cmd, shell=True, check=True)
+
+
+def has_change(token: str, pr_number: int, pred: Callable[[str], bool] | None = None):
+    """Check whether a PR has any change satisfying pred.
+
+    :param token: The authorization token for GitHub REST API.
+    :param pr_number: The number of the corresponding pull request.
+    :param pred: A boolean predictor (always true by default)
+    checking whether a single file has specific changes.
+    """
+
+    def _always_true(_):
+        return True
+
+    if pred is None:
+        pred = _always_true
+    repo = Repository(token=token, owner="fun-poker-game", repo="poker-rs")
+    files = repo.list_pull_request_files(pr_number)
+    return any(pred(file["filename"]) for file in files)
