@@ -2,7 +2,9 @@
 """
 from typing import Callable
 from pathlib import Path
-from ..utils import has_change
+import datetime
+import subprocess as sp
+from ...github import has_change
 
 
 def has_rust_change(
@@ -26,3 +28,12 @@ def has_rust_change(
     if pred is None:
         pred = _is_rust
     return has_change(token=token, pr_number=pr_number, pred=pred)
+
+
+def build_project(profile: str = "release") -> None:
+    """Build the Rust project.
+    :param profile: The profile for building.
+    """
+    cmd = f"RUSTFLAGS=-Awarnings cargo build --profile {profile}"
+    print("Started building at ", datetime.datetime.now(), sep="")
+    sp.run(cmd, shell=True, check=True)
