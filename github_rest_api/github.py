@@ -41,6 +41,7 @@ class Repository:
         self.repo = repo
         self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
         self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
+        self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
         self._headers = build_http_headers(token)
 
     def list_pull_requests(self) -> list[dict]:
@@ -126,6 +127,22 @@ class Repository:
         if not resp.ok:
             resp.raise_for_status()
         return resp.json()
+
+    def delete_ref(self, ref: str) -> None:
+        """Delete a reference from this repository.
+        :param ref: The reference to delete from this repository.
+        """
+        resp = requests.delete(
+            f"{self._url_refs}/{ref}", headers=self._headers, timeout=10
+        )
+        if not resp.ok:
+            resp.raise_for_status()
+
+    def delete_branch(self, branch: str) -> None:
+        """Delete a branch from this repository.
+        :param branch: The branch to delete from this repository.
+        """
+        self.delete_ref(ref=f"heads/{branch}")
 
     def pr_has_change(
         self, pr_number: int, pred: Callable[[str], bool] = lambda _: True
