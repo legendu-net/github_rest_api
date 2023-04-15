@@ -1,7 +1,6 @@
 """Util functions for GitHub actions.
 """
 from typing import Iterable
-import datetime
 import subprocess as sp
 import random
 
@@ -80,12 +79,3 @@ def push_branch(branch: str, branch_alt: str = ""):
                 """
             sp.run(cmd, shell=True, check=True)
         raise FailToPushToGitHubException(branch, branch_alt) from err
-
-
-def build_project(profile: str = "release") -> None:
-    """Build the Rust project.
-    :param profile: The profile for building.
-    """
-    cmd = f"RUSTFLAGS=-Awarnings cargo build --profile {profile}"
-    print("Started building at ", datetime.datetime.now(), sep="")
-    sp.run(cmd, shell=True, check=True)

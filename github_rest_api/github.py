@@ -1,5 +1,6 @@
 """Simple wrapper of GitHub REST APIs.
 """
+from typing import Callable
 import json
 import requests
 
@@ -107,3 +108,22 @@ class Repository:
         if not resp.ok:
             raise resp.raise_for_status
         return resp.json()
+
+
+def has_change(token: str, pr_number: int, pred: Callable[[str], bool] | None = None):
+    """Check whether a PR has any change satisfying pred.
+
+    :param token: The authorization token for GitHub REST API.
+    :param pr_number: The number of the corresponding pull request.
+    :param pred: A boolean predictor (always true by default)
+    checking whether a single file has specific changes.
+    """
+
+    def _always_true(_):
+        return True
+
+    if pred is None:
+        pred = _always_true
+    repo = Repository(token=token, owner="fun-poker-game", repo="poker-rs")
+    files = repo.list_pull_request_files(pr_number)
+    return any(pred(file["filename"]) for file in files)

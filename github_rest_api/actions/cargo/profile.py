@@ -1,9 +1,13 @@
 """Utils for profiling Rust applications.
 """
+from typing import Iterable
 from pathlib import Path
 import datetime
 import subprocess as sp
 import psutil
+from .utils import build_project
+from ..utils import config_git, switch_branch, push_branch
+from ...utils import partition
 
 
 def launch_application(cmd: list[str]) -> int:
@@ -69,3 +73,56 @@ def _gen_flamegraph(data_file: Path) -> Path:
     )
     sp.run(cmd, shell=True, check=True)
     return flamegraph
+
+
+def _save_flamegraph(prof_dir: Path, history: int = 5):
+    yyyymmdd = (datetime.datetime().date() - datetime.timedelta(days=history)).strftime(
+        "%Y%m%d"
+    )
+    switch_branch("gh-pages", fetch=True)
+    for path in prof_dir.iterdir():
+        if path.suffix == "":
+            path.unlink()
+    svgs_keep, svgs_drop = partition(
+        lambda p: p.name > yyyymmdd, prof_dir.glob("*.svg")
+    )
+    for svg in svgs_drop:
+        svg.unlink()
+    _gen_markdown(svgs=sorted(svgs_keep, reverse=True), prof_dir=prof_dir)
+    cmd = f"git add {prof_dir} && git commit -m 'update profiling results'"
+    sp.run(cmd, shell=True, check=True)
+    yyyymmdd = datetime.datetime.now().strftime("%Y%m%d")
+    push_branch(branch="gh-pages", branch_alt="gh-pages_prof_" + yyyymmdd)
+
+
+def _gen_markdown(svgs: Iterable[Path], prof_dir: Path) -> None:
+    def _gen_link(svg: Path):
+        svg = svg.name
+        yyyymmdd = svg[:8]
+        prof_name = svg[9:-4]
+        return f"- [{prof_name} - {yyyymmdd}]({svg})"
+
+    links = "\n".join(_gen_link(svg) for svg in svgs)
+    markdown = f"# Profiling\n{links}"
+    (prof_dir / "index.md").write_text(markdown, encoding="utf-8")
+
+
+def profiling(
+    local_repo_dir: str | Path,
+    apps: dict[str, list[str]],
+    profile: str = "release",
+    prof_dir: str | Path = "profiling",
+):
+    """Profiling specified applications."""
+    if isinstance(prof_dir, str):
+        prof_dir = Path(prof_dir)
+    config_git(
+        local_repo_dir=local_repo_dir,
+        user_email="profiling-bot@github.com",
+        user_name="profiling-bot",
+    )
+    build_project(profile=profile)
+    for name, cmd in apps.items():
+        pid = launch_application(cmd=cmd)
+        nperf(pid=pid, prof_name=name, prof_dir=prof_dir)
+    _save_flamegraph(prof_dir=prof_dir)
