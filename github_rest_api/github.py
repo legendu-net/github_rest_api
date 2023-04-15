@@ -30,6 +30,7 @@ class Repository:
         self.owner = owner
         self.repo = repo
         self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+        self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
         self._headers = build_http_headers(token)
 
     def list_pull_requests(self) -> list[dict]:
@@ -106,7 +107,14 @@ class Repository:
             timeout=10,
         )
         if not resp.ok:
-            raise resp.raise_for_status
+            resp.raise_for_status()
+        return resp.json()
+
+    def list_branches(self) -> dict[str, str]:
+        """List branches in this repository."""
+        resp = requests.get(url=self._url_branches, headers=self._headers, timeout=10)
+        if not resp.ok:
+            resp.raise_for_status()
         return resp.json()
 
 
