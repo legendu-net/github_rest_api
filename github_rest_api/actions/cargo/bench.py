@@ -189,9 +189,9 @@ def _gen_markdown(dirs: list[Path], extract_benchmark_name) -> str:
 
 
 def benchmark(
-    local_repo_dir: str,
-    bench_dir: str | Path,
+    local_repo_dir: str | Path,
     pr_number: str,
+    bench_dir: str | Path = "bench",
     storage: str = "",
     extract_benchmark_name: Callable = lambda path: path.stem,
 ):
