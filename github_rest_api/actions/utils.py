@@ -1,7 +1,6 @@
 """Util functions for GitHub actions.
 """
 from typing import Iterable
-import string
 import datetime
 import subprocess as sp
 import random
@@ -10,10 +9,11 @@ import random
 class FailToPushToGitHubException(Exception):
     """Exception for failure to push a branch to GitHub."""
 
-    def __init__(self, branch: str, branch_alt):
-        super().__init__(
-            f"Failed to push the branch {branch} to GitHub! Pushed to {branch_alt} instead."
-        )
+    def __init__(self, branch: str, branch_alt: str):
+        msg = f"Failed to push the branch {branch} to GitHub!"
+        if branch_alt:
+            msg += f" Pushed to {branch_alt} instead."
+        super().__init__(msg)
 
 
 def config_git(local_repo_dir: str, user_email: str, user_name: str):
@@ -63,21 +63,23 @@ def gen_temp_branch(
     return prefix + "".join(str(char) for char in chars)
 
 
-def push_gh_pages(name: str):
-    """Try pushing the local gh-pages branch.
-    On failure, fork a new branch and push it to GitHub.
-    :param name: A meaningful name as part of the name of the new branch.
+def push_branch(branch: str, branch_alt: str = ""):
+    """Try pushing a local Git branch to remote.
+    On failure, fork an alternative branch (if specified) and push it to GitHub.
+    :param branch: The local branch to push to GitHub.
+    :param branch_alt: An alternative branch name to push to GitHub.
     """
-    cmd = "git push origin gh-pages"
+    cmd = f"git push origin {branch}"
     try:
         sp.run(cmd, shell=True, check=True)
     except Exception as err:
-        branch = gen_temp_branch(
-            prefix=f"gh-pages_{name}_", chars=string.ascii_lowercase, nrand=3
-        )
-        cmd = f"git checkout -b {branch} && git push origin {branch}"
-        sp.run(cmd, shell=True, check=True)
-        raise FailToPushToGitHubException("gh-pages", branch) from err
+        if branch_alt:
+            cmd = f"""git checkout {branch} \
+                && git checkout -b {branch_alt} \
+                && git push origin {branch_alt}
+                """
+            sp.run(cmd, shell=True, check=True)
+        raise FailToPushToGitHubException(branch, branch_alt) from err
 
 
 def build_project(profile: str = "release") -> None:

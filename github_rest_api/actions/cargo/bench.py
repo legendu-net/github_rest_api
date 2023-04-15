@@ -2,13 +2,14 @@
 """
 from typing import Callable
 from pathlib import Path
+import datetime
 import shutil
 import subprocess as sp
 from ..utils import (
     config_git,
     create_branch,
     switch_branch,
-    push_gh_pages,
+    push_branch,
     gen_temp_branch,
 )
 
@@ -55,7 +56,8 @@ def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
     """
     cmd = f"git add {bench_dir} && git commit -m 'add benchmarks'"
     sp.run(cmd, shell=True, check=True)
-    push_gh_pages(name=pr_number)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    push_branch(branch=f"gh-pages_{pr_number}_{timestamp}")
 
 
 def _rename_bench_reports(dirs: list[Path]):
@@ -191,7 +193,6 @@ def benchmark(
     bench_dir: str | Path,
     pr_number: str,
     storage: str = "",
-    history: int = 20,
     extract_benchmark_name: Callable = lambda path: path.stem,
 ):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
@@ -214,7 +215,7 @@ def benchmark(
     )
     _cargo_criterion(bench_dir=bench_dir)
     _copy_bench_results(bench_dir=bench_dir, storage=storage)
-    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
+    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=1)
     _rename_bench_reports(dirs)
     (bench_dir / "index.md").write_text(
         _gen_markdown(dirs, extract_benchmark_name), encoding="utf-8"
