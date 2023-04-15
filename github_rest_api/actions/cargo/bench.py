@@ -2,13 +2,14 @@
 """
 from typing import Callable
 from pathlib import Path
+import datetime
 import shutil
 import subprocess as sp
 from ..utils import (
     config_git,
     create_branch,
     switch_branch,
-    push_gh_pages,
+    push_branch,
     gen_temp_branch,
 )
 

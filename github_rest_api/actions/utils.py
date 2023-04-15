@@ -1,7 +1,6 @@
 """Util functions for GitHub actions.
 """
 from typing import Iterable
-import string
 import datetime
 import subprocess as sp
 import random
