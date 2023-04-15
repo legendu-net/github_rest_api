@@ -192,7 +192,6 @@ def benchmark(
     bench_dir: str | Path,
     pr_number: str,
     storage: str = "",
-    history: int = 20,
     extract_benchmark_name: Callable = lambda path: path.stem,
 ):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
@@ -215,7 +214,7 @@ def benchmark(
     )
     _cargo_criterion(bench_dir=bench_dir)
     _copy_bench_results(bench_dir=bench_dir, storage=storage)
-    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
+    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=1)
     _rename_bench_reports(dirs)
     (bench_dir / "index.md").write_text(
         _gen_markdown(dirs, extract_benchmark_name), encoding="utf-8"
