@@ -1,6 +1,7 @@
 """Simple wrapper of GitHub REST APIs.
 """
 from typing import Callable
+from pathlib import Path
 import json
 import requests
 
@@ -15,6 +16,15 @@ def build_http_headers(token: str) -> dict[str, str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _is_rust(file: str) -> bool:
+    path = Path(file)
+    if path.name in ("Cargo.toml", "Cargo.lock"):
+        return True
+    if path.suffix == ".rs":
+        return True
+    return False
 
 
 class Repository:
@@ -117,21 +127,25 @@ class Repository:
             resp.raise_for_status()
         return resp.json()
 
+    def pr_has_change(
+        self, pr_number: int, pred: Callable[[str], bool] = lambda _: True
+    ):
+        """Check whether a PR has any change satisfying pred.
 
-def has_change(token: str, pr_number: int, pred: Callable[[str], bool] | None = None):
-    """Check whether a PR has any change satisfying pred.
+        :param pr_number: The number of the corresponding pull request.
+        :param pred: A boolean predictor (always true by default)
+        checking whether a single file has specific changes.
+        """
+        files = self.list_pull_request_files(pr_number)
+        return any(pred(file["filename"]) for file in files)
 
-    :param token: The authorization token for GitHub REST API.
-    :param pr_number: The number of the corresponding pull request.
-    :param pred: A boolean predictor (always true by default)
-    checking whether a single file has specific changes.
-    """
+    def pr_has_rust_change(
+        self, pr_number: int, pred: Callable[[str], bool] = _is_rust
+    ):
+        """Check whether a PR has any Rust-related changes.
 
-    def _always_true(_):
-        return True
-
-    if pred is None:
-        pred = _always_true
-    repo = Repository(token=token, owner="fun-poker-game", repo="poker-rs")
-    files = repo.list_pull_request_files(pr_number)
-    return any(pred(file["filename"]) for file in files)
+        :param token: The authorization token for GitHub REST API.
+        :param pr_number: The number of the corresponding pull request.
+        :param pred: A customized boolean predictor checking Rust-related changes.
+        """
+        return self.pr_has_change(pr_number=pr_number, pred=pred)
