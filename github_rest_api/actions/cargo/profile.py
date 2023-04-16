@@ -76,7 +76,7 @@ def _gen_flamegraph(data_file: Path) -> Path:
 
 
 def _save_flamegraph(prof_dir: Path, history: int = 5):
-    yyyymmdd = (datetime.datetime().date() - datetime.timedelta(days=history)).strftime(
+    yyyymmdd = (datetime.datetime.today() - datetime.timedelta(days=history)).strftime(
         "%Y%m%d"
     )
     switch_branch("gh-pages", fetch=True)
