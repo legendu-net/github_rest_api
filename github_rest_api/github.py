@@ -1,6 +1,6 @@
 """Simple wrapper of GitHub REST APIs.
 """
-from typing import Callable
+from typing import Any, Callable
 from pathlib import Path
 import json
 import requests
@@ -44,7 +44,7 @@ class Repository:
         self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
         self._headers = build_http_headers(token)
 
-    def list_pull_requests(self) -> list[dict]:
+    def list_pull_requests(self) -> list[dict[str, Any]]:
         """List pull requests in this repository."""
         resp = requests.get(
             url=self._url_pull,
@@ -55,7 +55,7 @@ class Repository:
             resp.raise_for_status()
         return resp.json()
 
-    def create_pull_request(self, data: dict[str, str]) -> dict | None:
+    def create_pull_request(self, data: dict[str, str]) -> dict[str, Any] | None:
         """Create a pull request.
 
         :param data: A dict containing information (e.g., base, head, title, body, etc.)
@@ -91,7 +91,7 @@ class Repository:
         if not resp.ok:
             resp.raise_for_status()
 
-    def update_branch(self, update: str, upstream: str):
+    def update_branch(self, update: str, upstream: str) -> None:
         """Update a branch by creating a PR from upstream and then merge it.
         :param update: The branch to update.
         :param upstream: The upstream branch.
@@ -107,7 +107,7 @@ class Repository:
             return
         self.merge_pull_request(pr["number"])
 
-    def list_pull_request_files(self, pr_number: int) -> dict[str, str]:
+    def list_pull_request_files(self, pr_number: int) -> list[dict[str, Any]]:
         """List changed files in the specified GitHub pull request.
 
         :param pr_number: The number of the pull request.
@@ -121,7 +121,7 @@ class Repository:
             resp.raise_for_status()
         return resp.json()
 
-    def list_branches(self) -> dict[str, str]:
+    def list_branches(self) -> list[dict[str, Any]]:
         """List branches in this repository."""
         resp = requests.get(url=self._url_branches, headers=self._headers, timeout=10)
         if not resp.ok:
@@ -146,7 +146,7 @@ class Repository:
 
     def pr_has_change(
         self, pr_number: int, pred: Callable[[str], bool] = lambda _: True
-    ):
+    ) -> bool:
         """Check whether a PR has any change satisfying pred.
 
         :param pr_number: The number of the corresponding pull request.
@@ -158,7 +158,7 @@ class Repository:
 
     def pr_has_rust_change(
         self, pr_number: int, pred: Callable[[str], bool] = _is_rust
-    ):
+    ) -> bool:
         """Check whether a PR has any Rust-related changes.
 
         :param token: The authorization token for GitHub REST API.
