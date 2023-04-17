@@ -18,7 +18,9 @@ def launch_application(cmd: list[str]) -> int:
         "Launched application for profiling at ",
         datetime.datetime.now(),
         " using the following command:\n",
-        " ".join(cmd),
+        "    sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)\n",
+        "where cmd is as below:\n    ",
+        cmd,
         "\n",
         sep="",
     )
