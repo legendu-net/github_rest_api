@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "github_rest_api"
-version = "0.21.0"
+version = "0.21.1"
 description = "Simple wrapper of GitHub REST APIs."
 authors = ["Ben Du <longendu@yahoo.com>"]
 readme = "README.md"
