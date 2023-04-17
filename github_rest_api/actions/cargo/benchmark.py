@@ -28,6 +28,7 @@ def _copy_last_dev_bench(bench_dir: Path) -> None:
 
 def _cargo_criterion(bench_dir: Path) -> None:
     """Run `cargo criterion` to benchmark the specified branch.
+    Notice that a temp branch is created for benchmarking.
 
     :param branch: The branch to benchmark.
     """
@@ -37,7 +38,7 @@ def _cargo_criterion(bench_dir: Path) -> None:
 
 
 def _copy_bench_results(bench_dir: Path, storage: str) -> None:
-    """Copy benchmark results into the right directory.
+    """Copy benchmark results into the right directory of the gh-pages branch.
     :param bench_dir: The root benchmark directory
     (under the gh-pages branch).
     :param storage: The directory relative to bench_dir for storing this benchmark results.
@@ -56,8 +57,10 @@ def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
     """
     cmd = f"git add {bench_dir} && git commit -m 'add benchmarks'"
     sp.run(cmd, shell=True, check=True)
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    push_branch(branch=f"gh-pages_{pr_number}_{timestamp}")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    branch = f"gh-pages_{pr_number}_{timestamp}"
+    create_branch(branch=branch)
+    push_branch(branch=branch)
 
 
 def _rename_bench_reports(dirs: list[Path]):
@@ -213,11 +216,13 @@ def benchmark(
         user_email="bench-bot@github.com",
         user_name="bench-bot",
     )
-    _cargo_criterion(bench_dir=bench_dir)
-    _copy_bench_results(bench_dir=bench_dir, storage=storage)
-    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=1)
-    _rename_bench_reports(dirs)
+    _cargo_criterion(bench_dir=bench_dir)  # _branch_*
+    _copy_bench_results(bench_dir=bench_dir, storage=storage)  # gh-pages
+    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=1)  # gh-pages
+    _rename_bench_reports(dirs)  # gh-pages
     (bench_dir / "index.md").write_text(
         _gen_markdown(dirs, extract_benchmark_name), encoding="utf-8"
-    )
-    _git_push_gh_pages(bench_dir=bench_dir, pr_number=pr_number)
+    )  # gh-pages
+    _git_push_gh_pages(
+        bench_dir=bench_dir, pr_number=pr_number
+    )  # gh-pages_pr_yyyymmdd_hhmmss
