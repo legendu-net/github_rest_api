@@ -25,6 +25,23 @@ def launch_application(cmd: list[str]) -> int:
         sep="",
     )
     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)  # pylint: disable=R1732
+    status = proc.poll()
+    if status:
+        stdout, stderr = proc.communicate()
+        print(
+            "The launched application failed with the error code ",
+            status,
+            "!\nStdout:\n",
+            stdout.decode(),
+            "\nStderr:\n",
+            stderr.decode(),
+            sep="",
+        )
+    if status == 0:
+        raise ValueError(
+            "The launched application has already finished! "
+            "Please use a long running command instead."
+        )
     return _find_process_id(proc)
 
 
