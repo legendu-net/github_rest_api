@@ -191,21 +191,40 @@ def _gen_markdown(dirs: list[Path], extract_benchmark_name) -> str:
     return f"# Benchmarks\n{sections}\n"
 
 
+def gen_index_markdown(
+    bench_dir: str | Path = "bench",
+    history: int = 1,
+    extract_benchmark_name: Callable[[Path], str] = lambda path: path.stem,
+) -> None:
+    """Generate index.md under the benchmark directory.
+    :param bench_dir: The root benchmark directory (under the gh-pages branch).
+    :param history: The number of historical benchmark results to keep.
+    :param extract_benchmark_name: A function to extract a benchmark name from a path.
+    """
+    if isinstance(bench_dir, str):
+        bench_dir = Path(bench_dir)
+    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=history)
+    _rename_bench_reports(dirs)
+    (bench_dir / "index.md").write_text(
+        _gen_markdown(dirs, extract_benchmark_name), encoding="utf-8"
+    )
+
+
 def benchmark(
     local_repo_dir: str | Path,
     pr_number: str,
     bench_dir: str | Path = "bench",
     storage: str = "",
-    extract_benchmark_name: Callable = lambda path: path.stem,
+    extract_benchmark_name: Callable[[Path], str] = lambda path: path.stem,
 ):
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
     :param local_repo_dir: Root directory of the local repository.
-    :param bench_dir: The root benchmark directory (under the gh-pages branch).
     :param pr_number: The number of the corresponding PR.
+    :param bench_dir: The root benchmark directory (under the gh-pages branch).
     :param storage: The directory relative to bench_dir for storing this benchmark results.
     If not specified (empty or None), pr_number is used.
-    :param history: The number of historical benchmark results to keep.
+    :param extract_benchmark_name: A function to extract a benchmark name from a path.
     """
     if isinstance(bench_dir, str):
         bench_dir = Path(bench_dir)
@@ -218,11 +237,9 @@ def benchmark(
     )
     _cargo_criterion(bench_dir=bench_dir)  # _branch_*
     _copy_bench_results(bench_dir=bench_dir, storage=storage)  # gh-pages
-    dirs = _clean_bench_dirs(bench_dir=bench_dir, history=1)  # gh-pages
-    _rename_bench_reports(dirs)  # gh-pages
-    (bench_dir / "index.md").write_text(
-        _gen_markdown(dirs, extract_benchmark_name), encoding="utf-8"
-    )  # gh-pages
+    gen_index_markdown(
+        bench_dir=bench_dir, history=1, extract_benchmark_name=extract_benchmark_name
+    )
     _git_push_gh_pages(
         bench_dir=bench_dir, pr_number=pr_number
     )  # gh-pages_pr_yyyymmdd_hhmmss
