@@ -41,7 +41,7 @@ class Repository:
         self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
         self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
         self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
-        self._url_issue = f"https://api.github.com/repos/{owner}/{repo}/issues"
+        self._url_issues = f"https://api.github.com/repos/{owner}/{repo}/issues"
         self._headers = build_http_headers(token)
 
     def list_pull_requests(self) -> list[dict[str, Any]]:
@@ -173,11 +173,10 @@ class Repository:
         :param issue_number: The number of the issue.
         :param body: Body text of the new comment.
         """
-        data = {"body": body}
         resp = requests.post(
-            url=f"{self._url_issue}/{issue_number}/comments",
+            url=f"{self._url_issues}/{issue_number}/comments",
             headers=self._headers,
-            json=data,
+            json={"body": body},
             timeout=10,
         )
         if not resp.ok:
