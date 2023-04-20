@@ -6,8 +6,8 @@ import datetime
 import subprocess as sp
 import psutil
 from .utils import build_project
-from ..utils import config_git, switch_branch, push_branch
-from ...utils import partition
+from ..utils import config_git, switch_branch, push_branch, commit_profiling
+from ...utils import partition, run_cmd
 
 
 def launch_application(cmd: list[str]) -> int:
@@ -66,31 +66,13 @@ def nperf(pid: int, prof_name: str, prof_dir: str | Path = ".") -> Path:
     yymmdd = time.strftime("%Y%m%d")
     prof_dir.mkdir(exist_ok=True, parents=True)
     data_file = prof_dir / f"{yymmdd}_{prof_name}"
-    cmd = f"nperf record -p {pid} -o '{data_file}'"
-    print(
-        "Started profiling at ",
-        datetime.datetime.now(),
-        " using the following command:\n",
-        cmd,
-        "\n",
-        sep="",
-    )
-    sp.run(cmd, shell=True, check=True)
+    run_cmd(f"nperf record -p {pid} -o '{data_file}'")
     return _gen_flamegraph(data_file)
 
 
 def _gen_flamegraph(data_file: Path) -> Path:
     flamegraph = data_file.with_name(data_file.name + ".svg")
-    cmd = f"nperf flamegraph '{data_file}' > '{flamegraph}'"
-    print(
-        "Started generating flamegraph at ",
-        datetime.datetime.now(),
-        " using the following command:\n",
-        cmd,
-        "\n",
-        sep="",
-    )
-    sp.run(cmd, shell=True, check=True)
+    run_cmd(f"nperf flamegraph '{data_file}' > '{flamegraph}'")
     return flamegraph
 
 
@@ -108,8 +90,7 @@ def _save_flamegraph(prof_dir: Path, history: int = 5):
     for svg in svgs_drop:
         svg.unlink()
     _gen_markdown(svgs=sorted(svgs_keep, reverse=True), prof_dir=prof_dir)
-    cmd = f"git add {prof_dir} && git commit -m 'update profiling results'"
-    sp.run(cmd, shell=True, check=True)
+    commit_profiling(prof_dir=prof_dir)
     yyyymmdd = datetime.datetime.now().strftime("%Y%m%d")
     push_branch(branch="gh-pages", branch_alt="gh-pages_prof_" + yyyymmdd)
 

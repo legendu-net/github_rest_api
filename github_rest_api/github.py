@@ -2,7 +2,6 @@
 """
 from typing import Any, Callable
 from pathlib import Path
-import json
 import requests
 
 
@@ -42,6 +41,7 @@ class Repository:
         self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
         self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
         self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
+        self._url_issue = f"https://api.github.com/repos/{owner}/{repo}/issues"
         self._headers = build_http_headers(token)
 
     def list_pull_requests(self) -> list[dict[str, Any]]:
@@ -72,7 +72,7 @@ class Repository:
         resp = requests.post(
             url=self._url_pull,
             headers=self._headers,
-            data=json.dumps(data),
+            json=data,
             timeout=10,
         )
         if resp.status_code == 422:
@@ -166,3 +166,20 @@ class Repository:
         :param pred: A customized boolean predictor checking Rust-related changes.
         """
         return self.pr_has_change(pr_number=pr_number, pred=pred)
+
+    def create_issue_comment(self, issue_number: int, body: str) -> dict[str, Any]:
+        """Add a new comment to an issue.
+
+        :param issue_number: The number of the issue.
+        :param body: Body text of the new comment.
+        """
+        data = {"body": body}
+        resp = requests.post(
+            url=f"{self._url_issue}/{issue_number}/comments",
+            headers=self._headers,
+            json=data,
+            timeout=10,
+        )
+        if not resp.ok:
+            resp.raise_for_status()
+        return resp.json()

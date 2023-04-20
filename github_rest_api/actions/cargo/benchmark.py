@@ -4,14 +4,15 @@ from typing import Callable
 from pathlib import Path
 import datetime
 import shutil
-import subprocess as sp
 from ..utils import (
     config_git,
     create_branch,
     switch_branch,
     push_branch,
     gen_temp_branch,
+    commit_benchmarks,
 )
+from ...utils import run_cmd
 
 
 def _copy_last_dev_bench(bench_dir: Path) -> None:
@@ -33,8 +34,7 @@ def _cargo_criterion(bench_dir: Path) -> None:
     :param branch: The branch to benchmark.
     """
     _copy_last_dev_bench(bench_dir=bench_dir)
-    cmd = "cargo criterion --message-format=json"
-    sp.run(cmd, shell=True, check=True)
+    run_cmd("cargo criterion --message-format=json")
 
 
 def _copy_bench_results(bench_dir: Path, storage: str) -> None:
@@ -50,17 +50,19 @@ def _copy_bench_results(bench_dir: Path, storage: str) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
-def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> None:
-    """Push benchmark results to gh-pages.
+def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> str:
+    """Push benchmark results to a branch
+    with the pattern gh-pages_{pr_number}_yyyymmdd_HHMMSS.
     :param bench_dir: The root benchmark directory
     (under the gh-pages branch).
+    :return: The name of the pushed branch.
     """
-    cmd = f"git add {bench_dir} && git commit -m 'add benchmarks'"
-    sp.run(cmd, shell=True, check=True)
+    commit_benchmarks(bench_dir=bench_dir)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     branch = f"gh-pages_{pr_number}_{timestamp}"
     create_branch(branch=branch)
     push_branch(branch=branch)
+    return branch
 
 
 def _rename_bench_reports(dirs: list[Path]):
@@ -216,7 +218,7 @@ def benchmark(
     bench_dir: str | Path = "bench",
     storage: str = "",
     extract_benchmark_name: Callable[[Path], str] = lambda path: path.stem,
-):
+) -> str:
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
     :param local_repo_dir: Root directory of the local repository.
@@ -240,6 +242,6 @@ def benchmark(
     gen_index_markdown(
         bench_dir=bench_dir, history=1, extract_benchmark_name=extract_benchmark_name
     )
-    _git_push_gh_pages(
+    return _git_push_gh_pages(
         bench_dir=bench_dir, pr_number=pr_number
     )  # gh-pages_pr_yyyymmdd_hhmmss
