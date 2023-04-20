@@ -1,8 +1,9 @@
 """Util functions for GitHub actions.
 """
 from typing import Iterable
-import subprocess as sp
+from pathlib import Path
 import random
+from ..utils import run_cmd
 
 
 class FailToPushToGitHubException(Exception):
@@ -25,15 +26,14 @@ def config_git(local_repo_dir: str, user_email: str, user_name: str):
             && git config --global user.email "{user_email}" \
             && git config --global user.name "{user_name}"
         """
-    sp.run(cmd, shell=True, check=True)
+    run_cmd(cmd)
 
 
 def create_branch(branch: str) -> None:
     """Create a new local branch.
     :param branch: The new local branch to create.
     """
-    cmd = f"git checkout -b {branch}"
-    sp.run(cmd, shell=True, check=True)
+    run_cmd(f"git checkout -b {branch}")
 
 
 def switch_branch(branch: str, fetch: bool) -> None:
@@ -42,10 +42,8 @@ def switch_branch(branch: str, fetch: bool) -> None:
     :param fetch: If true, fetch the branch from remote first.
     """
     if fetch:
-        cmd = f"git fetch origin {branch}"
-        sp.run(cmd, shell=True, check=True)
-    cmd = f"git checkout {branch}"
-    sp.run(cmd, shell=True, check=True)
+        run_cmd(f"git fetch origin {branch}")
+    run_cmd(f"git checkout {branch}")
 
 
 def gen_temp_branch(
@@ -68,14 +66,27 @@ def push_branch(branch: str, branch_alt: str = ""):
     :param branch: The local branch to push to GitHub.
     :param branch_alt: An alternative branch name to push to GitHub.
     """
-    cmd = f"git push origin {branch}"
     try:
-        sp.run(cmd, shell=True, check=True)
+        run_cmd(f"git push origin {branch}")
     except Exception as err:
         if branch_alt:
             cmd = f"""git checkout {branch} \
                 && git checkout -b {branch_alt} \
                 && git push origin {branch_alt}
                 """
-            sp.run(cmd, shell=True, check=True)
+            run_cmd(cmd)
         raise FailToPushToGitHubException(branch, branch_alt) from err
+
+
+def commit_benchmarks(bench_dir: str | Path):
+    """Commit changes in the benchmark directory.
+    :param bench_dir: The benchmark directory.
+    """
+    run_cmd(f"git add {bench_dir} && git commit -m 'add benchmarks'")
+
+
+def commit_profiling(prof_dir: str | Path):
+    """Commit changes in the profiling directory.
+    :param prof_dir: The profiling directory.
+    """
+    run_cmd(f"git add {prof_dir} && git commit -m 'update profiling results'")
