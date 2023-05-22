@@ -2,6 +2,7 @@
 """
 from typing import Iterable
 from pathlib import Path
+import time
 import datetime
 import subprocess as sp
 import psutil
@@ -25,17 +26,14 @@ def launch_application(cmd: list[str]) -> int:
         sep="",
     )
     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)  # pylint: disable=R1732
+    time.sleep(3)
     status = proc.poll()
     if status:
         stdout, stderr = proc.communicate()
-        print(
-            "The launched application failed with the error code ",
-            status,
-            "!\nStdout:\n",
-            stdout.decode(),
-            "\nStderr:\n",
-            stderr.decode(),
-            sep="",
+        raise RuntimeError(
+            f"The launched application failed with the error code {status}!\n"
+            f"Stdout:\n{stdout.decode()}\n"
+            f"Stderr:\n{stderr.decode()}\n"
         )
     if status == 0:
         raise ValueError(
