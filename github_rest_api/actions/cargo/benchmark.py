@@ -34,7 +34,7 @@ def _cargo_criterion(bench_dir: Path) -> None:
     :param branch: The branch to benchmark.
     """
     _copy_last_dev_bench(bench_dir=bench_dir)
-    run_cmd("cargo criterion --message-format=json")
+    run_cmd("cargo criterion --all-features --message-format=json")
 
 
 def _copy_bench_results(bench_dir: Path, storage: str) -> None:
