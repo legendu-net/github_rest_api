@@ -61,6 +61,8 @@ class Repository:
         :param data: A dict containing information (e.g., base, head, title, body, etc.)
         about the pull request to be created.
         """
+        if not isinstance(data, dict):
+            raise ValueError("A dict value is required for `data`.")
         if not ("head" in data and "base" in data):
             raise ValueError("The data dict must contains keys head and base!")
         # return an existing PR
@@ -83,6 +85,8 @@ class Repository:
         """Merge a pull request in this repository.
         :param pr_number: The number of the pull quest to be merged.
         """
+        if not isinstance(pr_number, int):
+            raise ValueError("An integer value is required for `pr_number`.")
         resp = requests.put(
             url=f"{self._url_pull}/{pr_number}/merge",
             headers=self._headers,
@@ -96,6 +100,10 @@ class Repository:
         :param update: The branch to update.
         :param upstream: The upstream branch.
         """
+        if not isinstance(update, str):
+            raise ValueError("A string value is required for `update`.")
+        if not isinstance(upstream, str):
+            raise ValueError("A string value is required for `upstream`.")
         pr = self.create_pull_request(
             {
                 "base": update,
@@ -112,6 +120,8 @@ class Repository:
 
         :param pr_number: The number of the pull request.
         """
+        if not isinstance(pr_number, int):
+            raise ValueError("An integer value is required for `pr_number`.")
         resp = requests.get(
             url=f"{self._url_pull}/{pr_number}/files",
             headers=self._headers,
@@ -132,6 +142,8 @@ class Repository:
         """Delete a reference from this repository.
         :param ref: The reference to delete from this repository.
         """
+        if not isinstance(ref, str):
+            raise ValueError("A string value is required for `ref`.")
         resp = requests.delete(
             f"{self._url_refs}/{ref}", headers=self._headers, timeout=10
         )
@@ -173,6 +185,10 @@ class Repository:
         :param issue_number: The number of the issue.
         :param body: Body text of the new comment.
         """
+        if not isinstance(issue_number, int):
+            raise ValueError("An integer value is required for `issue_number`.")
+        if not isinstance(body, str):
+            raise ValueError("A string message is required for `body`.")
         resp = requests.post(
             url=f"{self._url_issues}/{issue_number}/comments",
             headers=self._headers,
