@@ -25,7 +25,7 @@ def launch_application(cmd: list[str]) -> int:
         "\n",
         sep="",
     )
-    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE)  # pylint: disable=R1732
+    proc = sp.Popen(cmd, stdout=sp.DEVNULL, stderr=sp.DEVNULL)  # pylint: disable=R1732
     time.sleep(3)
     status = proc.poll()
     if status:
