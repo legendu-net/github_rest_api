@@ -25,14 +25,14 @@ def launch_application(cmd: list[str]) -> int:
         "\n",
         sep="",
     )
-    proc = sp.Popen(cmd, stdout=sp.DEVNULL, stderr=sp.DEVNULL)  # pylint: disable=R1732
+    proc = sp.Popen(cmd, stdout=sp.DEVNULL, stderr=sp.PIPE)  # pylint: disable=R1732
     time.sleep(3)
     status = proc.poll()
     if status:
-        stdout, stderr = proc.communicate()
+        _, stderr = proc.communicate()
+        stderr = b"" if stderr is None else stderr
         raise RuntimeError(
             f"The launched application failed with the error code {status}!\n"
-            f"Stdout:\n{stdout.decode()}\n"
             f"Stderr:\n{stderr.decode()}\n"
         )
     if status == 0:
