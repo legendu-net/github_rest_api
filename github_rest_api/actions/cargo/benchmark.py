@@ -20,11 +20,13 @@ def _copy_last_dev_bench(bench_dir: Path) -> None:
     create_branch(branch)
     switch_branch(branch="gh-pages", fetch=True)
     src = bench_dir / "dev/criterion"
+    tmpdir = tempfile.mkdtemp()
     if src.is_dir():
-        target = Path("target/criterion")
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, target, dirs_exist_ok=True)
+        shutil.copytree(src, tmpdir, dirs_exist_ok=True)
     switch_branch(branch=branch, fetch=False)
+    target = Path("target/criterion")
+    target.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(tmpdir, target, dirs_exist_ok=True)
 
 
 def _cargo_criterion(bench_dir: Path) -> None:
