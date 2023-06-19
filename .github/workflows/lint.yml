@@ -33,7 +33,7 @@ jobs:
         ~/.local/bin/poetry install
     - name: Lint with pylint
       run: |
-        ~/.local/bin/poetry run pylint -E aiutil/ tests/
+        ~/.local/bin/poetry run pylint -E github_rest_api/ tests/
     # - name: Lint with pytype
     #   run: |
     #     ~/.local/bin/poetry run pytype ./
