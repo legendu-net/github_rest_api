@@ -1,6 +1,7 @@
 """Benchmark action using cargo criterion.
 """
 from typing import Callable
+import tempfile
 from pathlib import Path
 import datetime
 import shutil
