@@ -30,14 +30,14 @@ def _copy_last_dev_bench(bench_dir: Path) -> None:
     shutil.copytree(tmpdir, target, dirs_exist_ok=True)
 
 
-def _cargo_criterion(bench_dir: Path) -> None:
+def _cargo_criterion(bench_dir: Path, env: str = "") -> None:
     """Run `cargo criterion` to benchmark the specified branch.
     Notice that a temp branch is created for benchmarking.
 
     :param branch: The branch to benchmark.
     """
     _copy_last_dev_bench(bench_dir=bench_dir)
-    run_cmd("cargo criterion --all-features --message-format=json")
+    run_cmd(f"{env} cargo criterion --all-features --message-format=json")
 
 
 def _copy_bench_results(bench_dir: Path, storage: str) -> None:
@@ -221,6 +221,7 @@ def benchmark(
     bench_dir: str | Path = "bench",
     storage: str = "",
     extract_benchmark_name: Callable[[Path], str] = lambda path: path.stem,
+    env: str = "",
 ) -> str:
     """Benchmark using `cargo criterion` and push benchmark results to gh-pages.
 
@@ -230,6 +231,8 @@ def benchmark(
     :param storage: The directory relative to bench_dir for storing this benchmark results.
     If not specified (empty or None), pr_number is used.
     :param extract_benchmark_name: A function to extract a benchmark name from a path.
+    :param env: Environment variables configuration with the format `var1=val1 var2=val2`
+    for the command `cargo-criterion`).
     """
     if isinstance(bench_dir, str):
         bench_dir = Path(bench_dir)
@@ -240,7 +243,7 @@ def benchmark(
         user_email="bench-bot@github.com",
         user_name="bench-bot",
     )
-    _cargo_criterion(bench_dir=bench_dir)  # _branch_*
+    _cargo_criterion(bench_dir=bench_dir, env=env)  # _branch_*
     _copy_bench_results(bench_dir=bench_dir, storage=storage)  # gh-pages
     gen_index_markdown(
         bench_dir=bench_dir, history=1, extract_benchmark_name=extract_benchmark_name
