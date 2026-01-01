@@ -9,34 +9,18 @@ on:
 jobs:
   lint_code:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: 
-          - "3.10"
     steps:
-    - uses: actions/cache@v2
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - uses: actions/checkout@v3
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
+    - uses: actions/checkout@v6
     - name: Install dependencies
       run: |
-        curl -sSL https://raw.githubusercontent.com/legendu-net/icon/main/install_icon.sh | sudo bash -
-        icon pt -ic
-        ~/.local/bin/poetry env use python3
-        ~/.local/bin/poetry install
-    - name: Lint with pylint
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        ~/.local/bin/uv sync --all-extras
+    - name: Lint with ruff
       run: |
-        ~/.local/bin/poetry run pylint -E github_rest_api/ tests/
-    # - name: Lint with pytype
-    #   run: |
-    #     ~/.local/bin/poetry run pytype ./
+        ~/.local/bin/uv run ruff check aiutil/ tests/
+    - name: Lint with Ty
+      run: |
+        ~/.local/bin/uv run ty check
     - name: Check code format
       run: |
-        ~/.local/bin/poetry run black --check ./
+        ~/.local/bin/uv run ruff format --check ./
