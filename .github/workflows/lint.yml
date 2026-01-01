@@ -17,7 +17,7 @@ jobs:
         ~/.local/bin/uv sync --all-extras
     - name: Lint with ruff
       run: |
-        ~/.local/bin/uv run ruff check aiutil/ tests/
+        ~/.local/bin/uv run ruff check github_rest_api/ tests/
     - name: Lint with Ty
       run: |
         ~/.local/bin/uv run ty check
