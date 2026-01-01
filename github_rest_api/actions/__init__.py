@@ -1,2 +1,1 @@
-"""GitHub Actions related utils.
-"""
+"""GitHub Actions related utils."""

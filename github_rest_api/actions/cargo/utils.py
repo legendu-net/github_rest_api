@@ -1,5 +1,5 @@
-"""Util functions for building GitHub Actions for Rust projects.
-"""
+"""Util functions for building GitHub Actions for Rust projects."""
+
 from ...utils import run_cmd
 
 

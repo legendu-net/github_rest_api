@@ -1,5 +1,5 @@
-"""Util functions for GitHub actions.
-"""
+"""Util functions for GitHub actions."""
+
 from typing import Iterable
 from pathlib import Path
 import random
@@ -16,7 +16,7 @@ class FailToPushToGitHubException(Exception):
         super().__init__(msg)
 
 
-def config_git(local_repo_dir: str, user_email: str, user_name: str):
+def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):
     """Config Git.
     :param local_repo_dir: The root directory of the project.
     :param user_email: The email of the user (no need to be a valid one).
