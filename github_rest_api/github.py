@@ -26,45 +26,19 @@ def _is_rust(file: str) -> bool:
     return False
 
 
-class Organization:
-    def __init__(self, token: str, owner: str):
-        """Initialize Repository.
-        :param token: An authorization token for GitHub REST APIs.
-        :param owner: The owner of the repository.
-        """
+class GitHub:
+    def __init__(self, token: str):
         self._token = token
-        self.owner = owner
         self._headers = build_http_headers(token)
 
-    def get_repositories(self):
-        # TODO
-        pass
-
-
-class Repository:
-    """Abstraction of a GitHub repository."""
-
-    def __init__(self, token: str, owner: str, repo: str):
-        """Initialize Repository.
-        :param token: An authorization token for GitHub REST APIs.
-        :param owner: The owner of the repository.
-        :param repo: The name of the repository.
-        """
-        self._token = token
-        self.owner = owner
-        self.repo = repo
-        self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
-        self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
-        self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
-        self._url_issues = f"https://api.github.com/repos/{owner}/{repo}/issues"
-        self._url_releases = f"https://api.github.com/repos/{owner}/{repo}/releases"
-        self._headers = build_http_headers(token)
-
-    def get(self, url: str, raise_for_status: bool = True) -> requests.Response:
+    def get(
+        self, url: str, raise_for_status: bool = True, **kwargs
+    ) -> requests.Response:
         resp = requests.get(
             url=url,
             headers=self._headers,
             timeout=10,
+            **kwargs,
         )
         if raise_for_status:
             resp.raise_for_status()
@@ -100,6 +74,25 @@ class Repository:
         if raise_for_status:
             resp.raise_for_status()
         return resp
+
+
+class Repository(GitHub):
+    """Abstraction of a GitHub repository."""
+
+    def __init__(self, token: str, owner: str, repo: str):
+        """Initialize Repository.
+        :param token: An authorization token for GitHub REST APIs.
+        :param owner: The owner of the repository.
+        :param repo: The name of the repository.
+        """
+        super(token)
+        self._owner = owner
+        self._repo = repo
+        self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+        self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
+        self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
+        self._url_issues = f"https://api.github.com/repos/{owner}/{repo}/issues"
+        self._url_releases = f"https://api.github.com/repos/{owner}/{repo}/releases"
 
     def get_releases(self) -> list[dict[str, Any]]:
         """List releases in this repository."""
@@ -279,3 +272,39 @@ class Repository:
             json={"body": body},
             timeout=10,
         ).json()
+
+
+class Organization(GitHub):
+    def __init__(self, token: str, owner: str):
+        """Initialize Repository.
+        :param token: An authorization token for GitHub REST APIs.
+        :param owner: The owner of the repository.
+        """
+        super(token)
+        self._owner = owner
+        self._url_repos = f"https://api.github.com/orgs/{owner}/repos"
+
+    def get_repositories(self, type_: str = "") -> list[dict[str, Any]]:
+        """Get all accessible repositories.
+
+        :param type_: Type of repositories (e.g., public).
+        """
+        params = {
+            "page": 1,
+            "per_page": 100,
+        }
+        if type_:
+            params["type"] = type_
+        repos = []
+        while True:
+            resp = self.get(url=self._url_repos, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            repos.extend(data)
+            if len(data) < params["per_page"]:
+                return repos
+            params["page"] += 1
+        return repos
+
+    def instantiate_repository(self, repo: str) -> Repository:
+        return Repository(token=self._token, owner=self._owner, repo=repo)
