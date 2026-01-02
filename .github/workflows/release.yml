@@ -1,11 +1,10 @@
-name: release
+name: Release
 on:
-  push:
-    branches:
-      - main
-jobs:
   release:
-    name: Release
+    types: [published]
+jobs:
+  release-github_rest_api:
+    name: Release github_rest_api
     runs-on: ubuntu-latest
     permissions:
       issues: write
