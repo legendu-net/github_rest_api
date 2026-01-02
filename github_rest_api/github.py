@@ -1,5 +1,6 @@
 """Simple wrapper of GitHub REST APIs."""
 
+from enum import StrEnum
 from typing import Any, Callable
 from pathlib import Path
 import requests
@@ -85,7 +86,7 @@ class Repository(GitHub):
         :param owner: The owner of the repository.
         :param repo: The name of the repository.
         """
-        super(token)
+        super().__init__(token)
         self._owner = owner
         self._repo = repo
         self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
@@ -274,36 +275,43 @@ class Repository(GitHub):
         ).json()
 
 
+class RepositoryType(StrEnum):
+    ALL = "all"
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+
 class Organization(GitHub):
     def __init__(self, token: str, owner: str):
         """Initialize Repository.
         :param token: An authorization token for GitHub REST APIs.
         :param owner: The owner of the repository.
         """
-        super(token)
+        super().__init__(token)
         self._owner = owner
         self._url_repos = f"https://api.github.com/orgs/{owner}/repos"
 
-    def get_repositories(self, type_: str = "") -> list[dict[str, Any]]:
+    def get_repositories(
+        self, type_: RepositoryType = RepositoryType.ALL
+    ) -> list[dict[str, Any]]:
         """Get all accessible repositories.
 
         :param type_: Type of repositories (e.g., public).
         """
         params = {
+            "type": type_,
             "page": 1,
             "per_page": 100,
         }
-        if type_:
-            params["type"] = type_
         repos = []
         while True:
             resp = self.get(url=self._url_repos, params=params)
             resp.raise_for_status()
             data = resp.json()
             repos.extend(data)
-            if len(data) < params["per_page"]:
+            if len(data) < params["per_page"]:  # ty: ignore[unsupported-operator]
                 return repos
-            params["page"] += 1
+            params["page"] += 1  # ty: ignore[unsupported-operator]
         return repos
 
     def instantiate_repository(self, repo: str) -> Repository:

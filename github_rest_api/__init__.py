@@ -1,3 +1,5 @@
 """GitHub REST APIs."""
 
-from .github import Repository  # noqa: F401
+from .github import Organization, Repository, RepositoryType
+
+__all__ = ["Organization", "Repository", "RepositoryType"]
