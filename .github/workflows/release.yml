@@ -19,7 +19,7 @@ jobs:
         run: |
           ~/.local/bin/uv build
           ls -lha dist/
-          ~/.local/bin/uv publish -u __token__ -p ${{ secrets.PYPI_AIUTIL }}
+          ~/.local/bin/uv publish -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
       # - uses: "marvinpinto/action-automatic-releases@latest"
       #   with:
       #     repo_token: ${{ secrets.GITHUB_TOKEN }}
