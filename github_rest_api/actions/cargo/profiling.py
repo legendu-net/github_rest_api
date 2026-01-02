@@ -1,5 +1,5 @@
-"""Utils for profiling Rust applications.
-"""
+"""Utils for profiling Rust applications."""
+
 from typing import Iterable
 from pathlib import Path
 import time
@@ -95,7 +95,7 @@ def _save_flamegraph(prof_dir: Path, history: int = 5):
 
 def _gen_markdown(svgs: Iterable[Path], prof_dir: Path) -> None:
     def _gen_link(svg: Path):
-        svg = svg.name
+        svg: str = svg.name
         yyyymmdd = svg[:8]
         prof_name = svg[9:-4]
         return f"- [{prof_name} - {yyyymmdd}]({svg})"

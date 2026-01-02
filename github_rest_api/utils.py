@@ -1,5 +1,5 @@
-"""Some generally useful util functions.
-"""
+"""Some generally useful util functions."""
+
 from itertools import tee, filterfalse
 import logging
 import subprocess as sp

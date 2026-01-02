@@ -1,34 +1,28 @@
-[tool.poetry]
+[project]
 name = "github_rest_api"
-version = "0.25.0"
+version = "0.26.0"
 description = "Simple wrapper of GitHub REST APIs."
-authors = ["Ben Du <longendu@yahoo.com>"]
+authors = [{ name = "Ben Du", email = "longendu@yahoo.com" }]
+requires-python = ">=3.10,<4"
 readme = "README.md"
-packages = [{include = "github_rest_api"}]
+dependencies = [
+    "requests>=2.28.2",
+    "psutil>=5.9.4",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<4"
-requests = ">=2.28.2"
-psutil = ">=5.9.4"
+[dependency-groups]
+dev = [
+    "pyright>=1.1.407",
+    "ruff>=0.14.10",
+    "ty>=0.0.8",
+]
 
+[tool.hatch.build.targets.sdist]
+include = ["github_rest_api"]
 
-[tool.poetry.group.dev.dependencies]
-pylint = ">=2.17.4"
-black = ">=23.3.0"
-
-[tool.pylint.master]
-ignore = ".venv,.ipynb_checkpoints"
-unsafe-load-any-extension = "no"
-extension-pkg-whitelist = "numpy,cv2,pyspark"
-generated-members = "sqlite3.*,cv2.*,pyspark.*"
-ignored-modules = "pyspark.sql.functions"
-
-[tool.pylint.typecheck]
-ignored-classes = "Namespace"
-
-[tool.pylint.messages_control]
-disable = "C0103,C0200,C0301,C0303,R0902,R0903,R0911,R0912,R0913,W0621,W0622,W0702,W0703,W1116"
+[tool.hatch.build.targets.wheel]
+include = ["github_rest_api"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -12,19 +12,15 @@ jobs:
       pull-requests: write
       contents: write
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: "3.10"
-      - name: Install Poetry
+      - uses: actions/checkout@v6
+      - name: Install uv
         run: |
-          pip3 install -U git+https://github.com/dclong/xinstall@main
-          xinstall pt -ic
+          curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Build and Publish Package to PyPI
         run: |
-          ~/.local/bin/poetry publish --build -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
+          ~/.local/bin/uv build
           ls -lha dist/
+          ~/.local/bin/uv publish -u __token__ -p ${{ secrets.PYPI_AIUTIL }}
       # - uses: "marvinpinto/action-automatic-releases@latest"
       #   with:
       #     repo_token: ${{ secrets.GITHUB_TOKEN }}

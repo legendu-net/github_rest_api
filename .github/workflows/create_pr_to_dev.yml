@@ -1,0 +1,19 @@
+name: Create PR To dev
+on:
+  push:
+    branches-ignore:
+      - main
+      - dev
+      - gh-pages*
+jobs:
+  create_pr_to_dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install uv
+        run: | 
+          curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
+      - uses: actions/checkout@v6
+      - name: Create PR to dev
+        run: | 
+          .github/pr.py --head-branch ${{ github.ref_name }} --base-branch dev --token ${{ secrets.GITHUBACTIONS }}
+

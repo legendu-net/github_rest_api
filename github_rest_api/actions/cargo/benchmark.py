@@ -1,5 +1,5 @@
-"""Benchmark action using cargo criterion.
-"""
+"""Benchmark action using cargo criterion."""
+
 from typing import Callable
 import tempfile
 from pathlib import Path
@@ -166,7 +166,7 @@ def _gen_report_ci_markdown(ci: tuple[str, str, str]) -> str:
 
 
 def _sort_cips(
-    cips: list[tuple[tuple[str, str, str], Path]]
+    cips: list[tuple[tuple[str, str, str], Path]],
 ) -> list[tuple[tuple[str, str, str], Path]]:
     """Sort confidence intervals according to the average performance changes."""
 
