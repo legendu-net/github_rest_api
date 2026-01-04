@@ -14,16 +14,9 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install uv
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
+          curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
       - name: Build and Publish Package to PyPI
         run: |
-          ~/.local/bin/uv build
+          uv build
           ls -lha dist/
-          ~/.local/bin/uv publish -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
-      # - uses: "marvinpinto/action-automatic-releases@latest"
-      #   with:
-      #     repo_token: ${{ secrets.GITHUB_TOKEN }}
-      #     automatic_release_tag: "latest"
-      #     prerelease: false
-      #     files: |
-      #       dist/*
+          uv publish -u __token__ -p ${{ secrets.PYPI_GITHUB_REST_API }}
