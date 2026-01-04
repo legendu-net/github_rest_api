@@ -12,6 +12,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "deptry>=0.24.0",
     "pyright>=1.1.407",
     "ruff>=0.14.10",
     "ty>=0.0.8",
