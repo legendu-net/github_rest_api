@@ -53,7 +53,7 @@ def main():
     # skip branches with the pattern _*
     if args.head_branch.startswith("_"):
         return
-    repo = Repository(args.token, "legendu-net", "github_rest_api")
+    repo = Repository(args.token, "legendu-net/github_rest_api")
     repo.create_pull_request(
         {
             "base": args.base_branch,
