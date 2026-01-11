@@ -3,17 +3,8 @@
 from typing import Iterable
 from pathlib import Path
 import random
-from ..utils import run_cmd
-
-
-class FailToPushToGitHubException(Exception):
-    """Exception for failure to push a branch to GitHub."""
-
-    def __init__(self, branch: str, branch_alt: str):
-        msg = f"Failed to push the branch {branch} to GitHub!"
-        if branch_alt:
-            msg += f" Pushed to {branch_alt} instead."
-        super().__init__(msg)
+from dulwich import porcelain
+from dulwich.repo import Repo
 
 
 def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):
@@ -22,18 +13,9 @@ def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):
     :param user_email: The email of the user (no need to be a valid one).
     :param user_name: The name of the user.
     """
-    cmd = f"""git config --global --add safe.directory {local_repo_dir} \
-            && git config --global user.email "{user_email}" \
-            && git config --global user.name "{user_name}"
-        """
-    run_cmd(cmd)
-
-
-def create_branch(branch: str) -> None:
-    """Create a new local branch.
-    :param branch: The new local branch to create.
-    """
-    run_cmd(f"git checkout -b {branch}")
+    config = Repo(local_repo_dir).get_config()
+    config.set(b"user", b"email", user_email.encode())
+    config.set(b"user", b"name", user_name.encode())
 
 
 def switch_branch(branch: str, fetch: bool) -> None:
@@ -42,8 +24,8 @@ def switch_branch(branch: str, fetch: bool) -> None:
     :param fetch: If true, fetch the branch from remote first.
     """
     if fetch:
-        run_cmd(f"git fetch origin {branch}")
-    run_cmd(f"git checkout {branch}")
+        porcelain.fetch(repo=".")
+    porcelain.checkout(repo=".", target=branch)
 
 
 def gen_temp_branch(
@@ -67,26 +49,27 @@ def push_branch(branch: str, branch_alt: str = ""):
     :param branch_alt: An alternative branch name to push to GitHub.
     """
     try:
-        run_cmd(f"git push origin {branch}")
+        porcelain.push(repo=".", refspecs=branch)
     except Exception as err:
         if branch_alt:
-            cmd = f"""git checkout {branch} \
-                && git checkout -b {branch_alt} \
-                && git push origin {branch_alt}
-                """
-            run_cmd(cmd)
-        raise FailToPushToGitHubException(branch, branch_alt) from err
+            porcelain.checkout(repo=".", target=branch)
+            porcelain.checkout(repo=".", new_branch=branch_alt)
+            porcelain.push(repo=".", refspecs=branch_alt)
+        else:
+            raise err
 
 
 def commit_benchmarks(bench_dir: str | Path):
     """Commit changes in the benchmark directory.
     :param bench_dir: The benchmark directory.
     """
-    run_cmd(f"git add {bench_dir} && git commit -m 'add benchmarks'")
+    porcelain.add(paths=bench_dir)
+    porcelain.commit(message="Add benchmarks.")
 
 
 def commit_profiling(prof_dir: str | Path):
     """Commit changes in the profiling directory.
     :param prof_dir: The profiling directory.
     """
-    run_cmd(f"git add {prof_dir} && git commit -m 'update profiling results'")
+    porcelain.add(paths=prof_dir)
+    porcelain.commit(message="Updating profiling results.")

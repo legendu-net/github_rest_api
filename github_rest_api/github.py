@@ -80,20 +80,18 @@ class GitHub:
 class Repository(GitHub):
     """Abstraction of a GitHub repository."""
 
-    def __init__(self, token: str, owner: str, repo: str):
+    def __init__(self, token: str, repo: str):
         """Initialize Repository.
         :param token: An authorization token for GitHub REST APIs.
-        :param owner: The owner of the repository.
-        :param repo: The name of the repository.
+        :param repo: A GitHub repository (in the format of owner/repo).
         """
         super().__init__(token)
-        self._owner = owner
         self._repo = repo
-        self._url_pull = f"https://api.github.com/repos/{owner}/{repo}/pulls"
-        self._url_branches = f"https://api.github.com/repos/{owner}/{repo}/branches"
-        self._url_refs = f"https://api.github.com/repos/{owner}/{repo}/git/refs"
-        self._url_issues = f"https://api.github.com/repos/{owner}/{repo}/issues"
-        self._url_releases = f"https://api.github.com/repos/{owner}/{repo}/releases"
+        self._url_pull = f"https://api.github.com/repos/{repo}/pulls"
+        self._url_branches = f"https://api.github.com/repos/{repo}/branches"
+        self._url_refs = f"https://api.github.com/repos/{repo}/git/refs"
+        self._url_issues = f"https://api.github.com/repos/{repo}/issues"
+        self._url_releases = f"https://api.github.com/repos/{repo}/releases"
 
     def get_releases(self) -> list[dict[str, Any]]:
         """List releases in this repository."""
@@ -315,4 +313,4 @@ class Organization(GitHub):
         return repos
 
     def instantiate_repository(self, repo: str) -> Repository:
-        return Repository(token=self._token, owner=self._owner, repo=repo)
+        return Repository(token=self._token, repo=f"{self._owner}/{repo}")

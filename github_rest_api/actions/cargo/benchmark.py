@@ -5,20 +5,20 @@ import tempfile
 from pathlib import Path
 import datetime
 import shutil
+import subprocess as sp
+from dulwich import porcelain
 from ..utils import (
     config_git,
-    create_branch,
     switch_branch,
     push_branch,
     gen_temp_branch,
     commit_benchmarks,
 )
-from ...utils import run_cmd
 
 
 def _copy_last_dev_bench(bench_dir: Path) -> None:
     branch = gen_temp_branch()
-    create_branch(branch)
+    porcelain.checkout(repo=".", new_branch=branch)
     switch_branch(branch="gh-pages", fetch=True)
     src = bench_dir / "dev/criterion"
     tmpdir = tempfile.mkdtemp()
@@ -37,7 +37,11 @@ def _cargo_criterion(bench_dir: Path, env: str = "") -> None:
     :param branch: The branch to benchmark.
     """
     _copy_last_dev_bench(bench_dir=bench_dir)
-    run_cmd(f"{env} cargo criterion --all-features --message-format=json")
+    sp.run(
+        f"{env} cargo criterion --all-features --message-format=json",
+        shell=True,
+        check=True,
+    )
 
 
 def _copy_bench_results(bench_dir: Path, storage: str) -> None:
@@ -63,7 +67,7 @@ def _git_push_gh_pages(bench_dir: Path, pr_number: str) -> str:
     commit_benchmarks(bench_dir=bench_dir)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     branch = f"gh-pages_{pr_number}_{timestamp}"
-    create_branch(branch=branch)
+    porcelain.checkout(repo=".", new_branch=branch)
     push_branch(branch=branch)
     return branch
 
