@@ -8,7 +8,7 @@ import subprocess as sp
 import psutil
 from .utils import build_project
 from ..utils import config_git, switch_branch, push_branch, commit_profiling
-from ...utils import partition, run_cmd
+from ...utils import partition
 
 
 def launch_application(cmd: list[str]) -> int:
@@ -64,13 +64,13 @@ def nperf(pid: int, prof_name: str, prof_dir: str | Path = ".") -> Path:
     yymmdd = time.strftime("%Y%m%d")
     prof_dir.mkdir(exist_ok=True, parents=True)
     data_file = prof_dir / f"{yymmdd}_{prof_name}"
-    run_cmd(f"nperf record -p {pid} -o '{data_file}'")
+    sp.run(f"nperf record -p {pid} -o '{data_file}'", shell=True, check=True)
     return _gen_flamegraph(data_file)
 
 
 def _gen_flamegraph(data_file: Path) -> Path:
     flamegraph = data_file.with_name(data_file.name + ".svg")
-    run_cmd(f"nperf flamegraph '{data_file}' > '{flamegraph}'")
+    sp.run(f"nperf flamegraph '{data_file}' > '{flamegraph}'", shell=True, check=True)
     return flamegraph
 
 
