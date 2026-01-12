@@ -73,25 +73,3 @@ def commit_profiling(prof_dir: str | Path):
     """
     porcelain.add(paths=prof_dir)
     porcelain.commit(message="Updating profiling results.")
-
-
-def strip_patch_version(version: str) -> str:
-    parts = version.split(".")
-    match len(parts):
-        case 1:
-            return parts[0] + ".0.0"
-        case 2 | 3:
-            return ".".join(parts[:2]) + ".0"
-        case _:
-            raise ValueError("Invalid version semantic provided!")
-
-
-def strip_minor_version(version: str) -> str:
-    parts = version.split(".")
-    match len(parts):
-        case 1:
-            return parts[0] + ".0.0"
-        case 2 | 3:
-            return ".".join(parts[:1]) + ".0.0"
-        case _:
-            raise ValueError("Invalid version semantic provided!")
