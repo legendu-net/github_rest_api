@@ -76,6 +76,17 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
+    def patch(self, url, raise_for_status: bool = True, **kwargs) -> requests.Response:
+        resp = requests.patch(
+            url=url,
+            headers=self._headers,
+            timeout=10,
+            **kwargs,
+        )
+        if raise_for_status:
+            resp.raise_for_status()
+        return resp
+
 
 class Repository(GitHub):
     """Abstraction of a GitHub repository."""
@@ -87,11 +98,13 @@ class Repository(GitHub):
         """
         super().__init__(token)
         self._repo = repo
-        self._url_pull = f"https://api.github.com/repos/{repo}/pulls"
-        self._url_branches = f"https://api.github.com/repos/{repo}/branches"
-        self._url_refs = f"https://api.github.com/repos/{repo}/git/refs"
-        self._url_issues = f"https://api.github.com/repos/{repo}/issues"
-        self._url_releases = f"https://api.github.com/repos/{repo}/releases"
+        self._url = f"https://api.github.com/repos"
+        self._url_repo = f"{self._url}/{repo}"
+        self._url_pull = f"{self._url_repo}/pulls"
+        self._url_branches = f"{self._url_repo}/branches"
+        self._url_refs = f"{self._url_repo}/git/refs"
+        self._url_issues = f"{self._url_repo}/issues"
+        self._url_releases = f"{self._url_repo}/releases"
 
     def get_releases(self) -> list[dict[str, Any]]:
         """List releases in this repository."""
@@ -271,6 +284,12 @@ class Repository(GitHub):
             json={"body": body},
             timeout=10,
         ).json()
+
+    def archive(self) -> requests.Response:
+        return self.patch(
+            url=self._url_repo,
+            json={"archived": True},
+        )
 
 
 class RepositoryType(StrEnum):
