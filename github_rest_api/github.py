@@ -98,8 +98,9 @@ class Repository(GitHub):
         """
         super().__init__(token)
         self._repo = repo
-        self._url = f"https://api.github.com/repos"
+        self._url = "https://api.github.com/repos"
         self._url_repo = f"{self._url}/{repo}"
+        self._url_transfer = f"{self._url_repo}/transfer"
         self._url_pull = f"{self._url_repo}/pulls"
         self._url_branches = f"{self._url_repo}/branches"
         self._url_refs = f"{self._url_repo}/git/refs"
@@ -290,6 +291,14 @@ class Repository(GitHub):
             url=self._url_repo,
             json={"archived": True},
         )
+
+    def transfer(self, new_owner: str, new_name: str = "") -> requests.Response:
+        data = {
+            "new_owner": new_owner,
+        }
+        if new_name:
+            data["new_name"] = new_name
+        return self.post(url=self._url_transfer, json=data)
 
 
 class RepositoryType(StrEnum):
