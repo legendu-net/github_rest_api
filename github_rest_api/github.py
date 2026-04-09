@@ -32,7 +32,7 @@ class GitHub:
         self._token = token
         self._headers = build_http_headers(token)
 
-    def get(
+    def _get(
         self, url: str, raise_for_status: bool = True, **kwargs
     ) -> requests.Response:
         resp = requests.get(
@@ -45,7 +45,7 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
-    def post(
+    def _post(
         self, url: str, headers=None, raise_for_status: bool = True, **kwargs
     ) -> requests.Response:
         if headers is None:
@@ -60,13 +60,13 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
-    def delete(self, url, raise_for_status: bool = True) -> requests.Response:
+    def _delete(self, url, raise_for_status: bool = True) -> requests.Response:
         resp = requests.delete(url=url, headers=self._headers, timeout=10)
         if raise_for_status:
             resp.raise_for_status()
         return resp
 
-    def put(self, url, raise_for_status: bool = True) -> requests.Response:
+    def _put(self, url, raise_for_status: bool = True) -> requests.Response:
         resp = requests.put(
             url=url,
             headers=self._headers,
@@ -76,7 +76,7 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
-    def patch(self, url, raise_for_status: bool = True, **kwargs) -> requests.Response:
+    def _patch(self, url, raise_for_status: bool = True, **kwargs) -> requests.Response:
         resp = requests.patch(
             url=url,
             headers=self._headers,
@@ -109,10 +109,10 @@ class Repository(GitHub):
 
     def get_releases(self) -> list[dict[str, Any]]:
         """List releases in this repository."""
-        return self.get(url=self._url_releases).json()
+        return self._get(url=self._url_releases).json()
 
     def get_release_latest(self) -> dict[str, Any]:
-        return self.get(url=f"{self._url_releases}/latest").json()
+        return self._get(url=f"{self._url_releases}/latest").json()
 
     def get_release_assets(self, release: int) -> list[dict[str, Any]]:
         return requests.get(url=f"{self._url_releases}/{release}/assets").json()
@@ -134,7 +134,7 @@ class Repository(GitHub):
         """
         if not isinstance(json, dict):
             raise ValueError("A dict value is required for `json`.")
-        return self.post(
+        return self._post(
             url=self._url_releases,
             json=json,
         ).json()
@@ -145,7 +145,7 @@ class Repository(GitHub):
         if isinstance(path, str):
             path = Path(path)
         with path.open(mode="rb") as fin:
-            return self.post(
+            return self._post(
                 url=f"{self._url_releases.replace('api', 'uploads', 1)}/{release}/assets",
                 params={
                     "name": name,
@@ -159,7 +159,7 @@ class Repository(GitHub):
 
     def get_pull_requests(self) -> list[dict[str, Any]]:
         """List pull requests in this repository."""
-        return self.get(url=self._url_pull).json()
+        return self._get(url=self._url_pull).json()
 
     def create_pull_request(self, json: dict[str, str]) -> dict[str, Any] | None:
         """Create a pull request.
@@ -178,7 +178,7 @@ class Repository(GitHub):
             if pr["head"]["ref"] == json["head"] and pr["base"]["ref"] == json["base"]:
                 return pr
         # creat a new PR
-        resp = self.post(
+        resp = self._post(
             url=self._url_pull,
             json=json,
             raise_for_status=False,
@@ -194,7 +194,7 @@ class Repository(GitHub):
         """
         if not isinstance(pr_number, int):
             raise ValueError("An integer value is required for `pr_number`.")
-        return self.put(
+        return self._put(
             url=f"{self._url_pull}/{pr_number}/merge",
         ).json()
 
@@ -225,11 +225,14 @@ class Repository(GitHub):
         """
         if not isinstance(pr_number, int):
             raise ValueError("An integer value is required for `pr_number`.")
-        return self.get(url=f"{self._url_pull}/{pr_number}/files").json()
+        return self._get(url=f"{self._url_pull}/{pr_number}/files").json()
 
     def get_branches(self) -> list[dict[str, Any]]:
         """List branches in this repository."""
-        return self.get(url=self._url_branches).json()
+        return self._get(url=self._url_branches).json()
+
+    def delete(self, ref: str) -> dict[str, str]:
+        return self._delete(url=self._url_repo).json()
 
     def delete_ref(self, ref: str) -> dict[str, Any]:
         """Delete a reference from this repository.
@@ -237,7 +240,7 @@ class Repository(GitHub):
         """
         if not isinstance(ref, str):
             raise ValueError("A string value is required for `ref`.")
-        return self.delete(
+        return self._delete(
             url=f"{self._url_refs}/{ref}",
         ).json()
 
@@ -280,14 +283,14 @@ class Repository(GitHub):
             raise ValueError("An integer value is required for `issue_number`.")
         if not isinstance(body, str):
             raise ValueError("A string message is required for `body`.")
-        return self.post(
+        return self._post(
             url=f"{self._url_issues}/{issue_number}/comments",
             json={"body": body},
             timeout=10,
         ).json()
 
     def archive(self) -> requests.Response:
-        return self.patch(
+        return self._patch(
             url=self._url_repo,
             json={"archived": True},
         )
@@ -298,7 +301,7 @@ class Repository(GitHub):
         }
         if new_name:
             data["new_name"] = new_name
-        return self.post(url=self._url_transfer, json=data)
+        return self._post(url=self._url_transfer, json=data)
 
 
 class RepositoryType(StrEnum):
@@ -331,7 +334,7 @@ class Organization(GitHub):
         }
         repos = []
         while True:
-            resp = self.get(url=self._url_repos, params=params)
+            resp = self._get(url=self._url_repos, params=params)
             resp.raise_for_status()
             data = resp.json()
             repos.extend(data)
