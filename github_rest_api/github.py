@@ -87,6 +87,25 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
+    def _extract_all(
+        self, url: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        if params is None:
+            params = {}
+        if "per_page" not in params:
+            params["per_page"] = 100
+        params["page"] = 1
+        res = []
+        while True:
+            resp = self._get(url=url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            res.extend(data)
+            if len(data) < params["per_page"]:
+                return res
+            params["page"] += 1
+        return res
+
 
 class Repository(GitHub):
     """Abstraction of a GitHub repository."""
@@ -100,6 +119,7 @@ class Repository(GitHub):
         self._repo = repo
         self._url = "https://api.github.com/repos"
         self._url_repo = f"{self._url}/{repo}"
+        self._url_tags = f"{self._url_repo}/tags"
         self._url_transfer = f"{self._url_repo}/transfer"
         self._url_pull = f"{self._url_repo}/pulls"
         self._url_branches = f"{self._url_repo}/branches"
@@ -110,6 +130,10 @@ class Repository(GitHub):
     def get_releases(self) -> list[dict[str, Any]]:
         """List releases in this repository."""
         return self._get(url=self._url_releases).json()
+
+    def get_tags(self) -> list[dict[str, Any]]:
+        """List repository tags."""
+        return self._extract_all(url=self._url_tags)
 
     def get_release_latest(self) -> dict[str, Any]:
         return self._get(url=f"{self._url_releases}/latest").json()
@@ -327,21 +351,7 @@ class Organization(GitHub):
 
         :param type_: Type of repositories (e.g., public).
         """
-        params = {
-            "type": type_,
-            "page": 1,
-            "per_page": 100,
-        }
-        repos = []
-        while True:
-            resp = self._get(url=self._url_repos, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            repos.extend(data)
-            if len(data) < params["per_page"]:  # ty: ignore[unsupported-operator]
-                return repos
-            params["page"] += 1  # ty: ignore[unsupported-operator]
-        return repos
+        return self._extract_all(url=self._url_repos, params={"type": type_})
 
     def instantiate_repository(self, repo: str) -> Repository:
         return Repository(token=self._token, repo=f"{self._owner}/{repo}")
