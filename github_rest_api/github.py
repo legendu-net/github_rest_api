@@ -1,5 +1,6 @@
 """Simple wrapper of GitHub REST APIs."""
 
+from abc import ABCMeta, abstractmethod
 from enum import StrEnum
 from typing import Any, Callable
 from pathlib import Path
@@ -90,14 +91,13 @@ class GitHub:
     def _extract_all(
         self, url: str, params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
-        if params is None:
-            params = {}
+        params = params.copy() if params else {}
         if "per_page" not in params:
             params["per_page"] = 100
         params["page"] = 1
         res = []
         while True:
-            resp = self._get(url=url, params=params)
+            resp = self._get(url=url, params=params.copy())
             resp.raise_for_status()
             data = resp.json()
             res.extend(data)
@@ -334,15 +334,22 @@ class RepositoryType(StrEnum):
     PRIVATE = "private"
 
 
-class Organization(GitHub):
+class Owner(GitHub, metaclass=ABCMeta):
+    """An abstract owner class representing an organization or user."""
+
     def __init__(self, token: str, owner: str):
         """Initialize Repository.
         :param token: An authorization token for GitHub REST APIs.
-        :param owner: The owner of the repository.
+        :param owner: The name of the owner (organization or user).
         """
         super().__init__(token)
         self._owner = owner
-        self._url_repos = f"https://api.github.com/orgs/{owner}/repos"
+        self._url_repos = ""
+        self._url_create_repo = ""
+
+    @abstractmethod
+    def _set_urls(self) -> None:
+        pass
 
     def get_repositories(
         self, type_: RepositoryType = RepositoryType.ALL
@@ -355,3 +362,49 @@ class Organization(GitHub):
 
     def instantiate_repository(self, repo: str) -> Repository:
         return Repository(token=self._token, repo=f"{self._owner}/{repo}")
+
+    def create_repository(
+        self, name: str, description: str = "", private: bool = True, **kwargs
+    ) -> dict[str, Any]:
+        data = {
+            "name": name,
+            "description": description,
+            "homepage": "https://github.com",
+            "private": private,
+            "has_issues": True,
+            "has_projects": True,
+            "has_wiki": True,
+        }
+        return self._post(url=self._url_create_repo, json=data, **kwargs).json()
+
+
+class User(Owner):
+    """A GitHub user."""
+
+    def __init__(self, token: str, user: str):
+        """Initialize a User.
+        :param token: An authorization token for GitHub REST APIs.
+        :param user: The name of the user.
+        """
+        super().__init__(token=token, owner=user)
+        self._set_urls()
+
+    def _set_urls(self) -> None:
+        self._url_repos = f"https://api.github.com/users/{self._owner}/repos"
+        self._url_create_repo = "https://api.github.com/user/repos"
+
+
+class Organization(Owner):
+    """A GitHub organization."""
+
+    def __init__(self, token: str, org: str):
+        """Initialize an Organization.
+        :param token: An authorization token for GitHub REST APIs.
+        :param org: The name of the organization.
+        """
+        super().__init__(token=token, owner=org)
+        self._set_urls()
+
+    def _set_urls(self) -> None:
+        self._url_repos = f"https://api.github.com/orgs/{self._owner}/repos"
+        self._url_create_repo = self._url_repos
