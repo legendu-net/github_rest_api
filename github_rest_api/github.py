@@ -255,8 +255,9 @@ class Repository(GitHub):
         """List branches in this repository."""
         return self._get(url=self._url_branches).json()
 
-    def delete(self, ref: str) -> dict[str, str]:
-        return self._delete(url=self._url_repo).json()
+    def delete(self) -> requests.Response:
+        """Delete this repository from GitHub."""
+        return self._delete(url=self._url_repo)
 
     def delete_ref(self, ref: str) -> dict[str, Any]:
         """Delete a reference from this repository.
