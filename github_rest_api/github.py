@@ -91,14 +91,13 @@ class GitHub:
     def _extract_all(
         self, url: str, params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
-        if params is None:
-            params = {}
+        params = params.copy() if params else {}
         if "per_page" not in params:
             params["per_page"] = 100
         params["page"] = 1
         res = []
         while True:
-            resp = self._get(url=url, params=params)
+            resp = self._get(url=url, params=params.copy())
             resp.raise_for_status()
             data = resp.json()
             res.extend(data)
@@ -346,9 +345,10 @@ class Owner(GitHub, metaclass=ABCMeta):
         super().__init__(token)
         self._owner = owner
         self._url_repos = ""
+        self._url_create_repo = ""
 
     @abstractmethod
-    def _set_url_repos(self) -> None:
+    def _set_urls(self) -> None:
         pass
 
     def get_repositories(
@@ -375,7 +375,7 @@ class Owner(GitHub, metaclass=ABCMeta):
             "has_projects": True,
             "has_wiki": True,
         }
-        return self._post(url=self._url_repos, json=data, **kwargs).json()
+        return self._post(url=self._url_create_repo, json=data, **kwargs).json()
 
 
 class User(Owner):
@@ -387,10 +387,11 @@ class User(Owner):
         :param user: The name of the user.
         """
         super().__init__(token=token, owner=user)
-        self._set_url_repos()
+        self._set_urls()
 
-    def _set_url_repos(self) -> None:
-        self._url_repos = f"https://api.github.com/{self._owner}/repos"
+    def _set_urls(self) -> None:
+        self._url_repos = f"https://api.github.com/users/{self._owner}/repos"
+        self._url_create_repo = "https://api.github.com/user/repos"
 
 
 class Organization(Owner):
@@ -402,7 +403,8 @@ class Organization(Owner):
         :param org: The name of the organization.
         """
         super().__init__(token=token, owner=org)
-        self._set_url_repos()
+        self._set_urls()
 
-    def _set_url_repos(self) -> None:
+    def _set_urls(self) -> None:
         self._url_repos = f"https://api.github.com/orgs/{self._owner}/repos"
+        self._url_create_repo = self._url_repos

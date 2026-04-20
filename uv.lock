@@ -195,7 +195,7 @@ wheels = [
 
 [[package]]
 name = "github-rest-api"
-version = "0.32.0"
+version = "0.33.0"
 source = { editable = "." }
 dependencies = [
     { name = "dulwich" },
@@ -222,7 +222,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "deptry", specifier = ">=0.24.0" },
+    { name = "deptry", specifier = ">=0.24" },
     { name = "pyproject-fmt", specifier = ">=2.21.1" },
     { name = "pyright", specifier = ">=1.1.407" },
     { name = "pytest", specifier = ">=9.0.2" },

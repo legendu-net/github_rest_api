@@ -1,5 +1,5 @@
 """GitHub REST APIs."""
 
-from .github import Organization, Repository, RepositoryType
+from .github import Organization, Repository, RepositoryType, User
 
-__all__ = ["Organization", "Repository", "RepositoryType"]
+__all__ = ["Organization", "Repository", "RepositoryType", "User"]
