@@ -1,4 +1,4 @@
-from github_rest_api.github import User, Organization
+from github_rest_api.github import User, Organization, Repository
 
 
 def test_user_get_repositories():
@@ -15,3 +15,11 @@ def test_organization_get_repositories():
     org = Organization(token, org_name)
     repos = org.get_repositories()
     assert len(repos) > 0
+
+
+def test_repository_get_branch():
+    token = ""
+    repo_name = "legendu-net/github_rest_api"
+    repo = Repository(token, repo_name)
+    branch = repo.get_branch("main")
+    assert branch["name"] == "main"
