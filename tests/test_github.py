@@ -19,7 +19,7 @@ def test_organization_get_repositories():
 
 def test_repository_get_branch():
     token = ""
-    repo_name = "dclong/github_rest_api"
+    repo_name = "legendu-net/github_rest_api"
     repo = Repository(token, repo_name)
     branch = repo.get_branch("main")
     assert branch["name"] == "main"
