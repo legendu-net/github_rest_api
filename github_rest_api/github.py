@@ -255,6 +255,12 @@ class Repository(GitHub):
         """List branches in this repository."""
         return self._get(url=self._url_branches).json()
 
+    def get_branch(self, branch: str) -> dict[str, Any]:
+        """Get information about a specific branch.
+        :param branch: The name of the branch.
+        """
+        return self._get(url=f"{self._url_branches}/{branch}").json()
+
     def delete(self) -> requests.Response:
         """Delete this repository from GitHub."""
         return self._delete(url=self._url_repo)
