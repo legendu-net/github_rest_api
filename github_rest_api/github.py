@@ -275,7 +275,7 @@ class Repository(GitHub):
             url=f"{self._url_refs}/{ref}",
         )
 
-    def delete_branch(self, branch: str) -> dict[str, Any]:
+    def delete_branch(self, branch: str) -> requests.Response:
         """Delete a branch from this repository.
         :param branch: The branch to delete from this repository.
         """
