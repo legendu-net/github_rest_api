@@ -265,7 +265,7 @@ class Repository(GitHub):
         """Delete this repository from GitHub."""
         return self._delete(url=self._url_repo)
 
-    def delete_ref(self, ref: str) -> dict[str, Any]:
+    def delete_ref(self, ref: str) -> requests.Response:
         """Delete a reference from this repository.
         :param ref: The reference to delete from this repository.
         """
@@ -273,9 +273,9 @@ class Repository(GitHub):
             raise ValueError("A string value is required for `ref`.")
         return self._delete(
             url=f"{self._url_refs}/{ref}",
-        ).json()
+        )
 
-    def delete_branch(self, branch: str) -> dict[str, Any]:
+    def delete_branch(self, branch: str) -> requests.Response:
         """Delete a branch from this repository.
         :param branch: The branch to delete from this repository.
         """
