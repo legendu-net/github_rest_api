@@ -89,7 +89,7 @@ class GitHub:
         return resp
 
     def _extract_all(
-        self, url: str, params: dict[str, Any] | None = None
+        self, url: str, params: dict[str, Any] | None = None, n: int = 0
     ) -> list[dict[str, Any]]:
         params = params.copy() if params else {}
         if "per_page" not in params:
@@ -101,10 +101,11 @@ class GitHub:
             resp.raise_for_status()
             data = resp.json()
             res.extend(data)
+            if n and len(res) >= n:
+                return res[:n]
             if len(data) < params["per_page"]:
                 return res
             params["page"] += 1
-        return res
 
 
 class Repository(GitHub):
@@ -127,19 +128,19 @@ class Repository(GitHub):
         self._url_issues = f"{self._url_repo}/issues"
         self._url_releases = f"{self._url_repo}/releases"
 
-    def get_releases(self) -> list[dict[str, Any]]:
+    def get_releases(self, n: int = 0) -> list[dict[str, Any]]:
         """List releases in this repository."""
-        return self._get(url=self._url_releases).json()
+        return self._extract_all(url=self._url_releases, n=n)
 
-    def get_tags(self) -> list[dict[str, Any]]:
+    def get_tags(self, n: int = 0) -> list[dict[str, Any]]:
         """List repository tags."""
-        return self._extract_all(url=self._url_tags)
+        return self._extract_all(url=self._url_tags, n=n)
 
     def get_release_latest(self) -> dict[str, Any]:
         return self._get(url=f"{self._url_releases}/latest").json()
 
-    def get_release_assets(self, release: int) -> list[dict[str, Any]]:
-        return requests.get(url=f"{self._url_releases}/{release}/assets").json()
+    def get_release_assets(self, release: int, n: int = 0) -> list[dict[str, Any]]:
+        return self._extract_all(url=f"{self._url_releases}/{release}/assets", n=n)
 
     def create_release(self, json: dict[str, Any]):
         """Create a release.
@@ -181,9 +182,9 @@ class Repository(GitHub):
                 data=fin,
             ).json()
 
-    def get_pull_requests(self) -> list[dict[str, Any]]:
+    def get_pull_requests(self, n: int = 0) -> list[dict[str, Any]]:
         """List pull requests in this repository."""
-        return self._get(url=self._url_pull).json()
+        return self._extract_all(url=self._url_pull, n=n)
 
     def create_pull_request(self, json: dict[str, str]) -> dict[str, Any] | None:
         """Create a pull request.
@@ -242,18 +243,20 @@ class Repository(GitHub):
             return
         return self.merge_pull_request(pr["number"])
 
-    def get_pull_request_files(self, pr_number: int) -> list[dict[str, Any]]:
+    def get_pull_request_files(
+        self, pr_number: int, n: int = 0
+    ) -> list[dict[str, Any]]:
         """List changed files in the specified GitHub pull request.
 
         :param pr_number: The number of the pull request.
         """
         if not isinstance(pr_number, int):
             raise ValueError("An integer value is required for `pr_number`.")
-        return self._get(url=f"{self._url_pull}/{pr_number}/files").json()
+        return self._extract_all(url=f"{self._url_pull}/{pr_number}/files", n=n)
 
-    def get_branches(self) -> list[dict[str, Any]]:
+    def get_branches(self, n: int = 0) -> list[dict[str, Any]]:
         """List branches in this repository."""
-        return self._get(url=self._url_branches).json()
+        return self._extract_all(url=self._url_branches, n=n)
 
     def get_branch(self, branch: str) -> dict[str, Any]:
         """Get information about a specific branch.
@@ -359,13 +362,13 @@ class Owner(GitHub, metaclass=ABCMeta):
         pass
 
     def get_repositories(
-        self, type_: RepositoryType = RepositoryType.ALL
+        self, type_: RepositoryType = RepositoryType.ALL, n: int = 0
     ) -> list[dict[str, Any]]:
         """Get all accessible repositories.
 
         :param type_: Type of repositories (e.g., public).
         """
-        return self._extract_all(url=self._url_repos, params={"type": type_})
+        return self._extract_all(url=self._url_repos, params={"type": type_}, n=n)
 
     def instantiate_repository(self, repo: str) -> Repository:
         return Repository(token=self._token, repo=f"{self._owner}/{repo}")

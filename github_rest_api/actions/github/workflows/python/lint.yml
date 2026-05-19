@@ -1,0 +1,27 @@
+name: Lint Code
+
+on:
+  push:
+    branches: [ dev, main ]
+  pull_request:
+    branches: [ dev ]
+
+jobs:
+  lint_code:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
+        uv sync --all-extras
+    - name: Check pyproject.toml formatting
+      run: uv run pyproject-fmt --check pyproject.toml
+    - name: Check code formatting
+      run: uv run ruff format --check .
+    - name: Lint with ruff
+      run: uv run ruff check 
+    - name: Lint with Ty
+      run: uv run ty check
+    - name: Analyze Dependencies
+      run: uv run deptry .
