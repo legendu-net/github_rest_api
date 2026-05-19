@@ -1,9 +1,10 @@
 name: Lint Code
 
 on:
+  push:
+    branches: [ dev, main ]
   pull_request:
-    branches:
-      - main
+    branches: [ dev ]
 
 jobs:
   lint_code:
@@ -14,10 +15,12 @@ jobs:
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
         uv sync --all-extras
-    - name: Check code format
-      run: uv run ruff format --check ./
+    - name: Check pyproject.toml formatting
+      run: uv run pyproject-fmt --check pyproject.toml
+    - name: Check code formatting
+      run: uv run ruff format --check .
     - name: Lint with ruff
-      run: uv run ruff check github_rest_api/ tests/
+      run: uv run ruff check 
     - name: Lint with Ty
       run: uv run ty check
     - name: Analyze Dependencies

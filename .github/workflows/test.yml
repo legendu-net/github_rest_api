@@ -1,0 +1,25 @@
+name: Run Tests
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  test_code:
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: 
+          - macOS-latest
+          - ubuntu-latest
+        python-version: 
+          - "3.12"
+          - "3.13"
+          - "3.14"
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
+        uv sync --all-extras
+    - name: Test with pytest
+      run: uv run --python ${{ matrix.python-version }} pytest

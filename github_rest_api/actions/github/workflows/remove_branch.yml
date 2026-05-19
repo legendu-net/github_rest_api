@@ -1,0 +1,19 @@
+name: Remove Branches
+on:
+  schedule:
+    - cron: '0 3 * * *'
+      timezone: 'America/Los_Angeles'
+jobs:
+  remove_branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
+      - name: Remove Branches
+        run: | 
+          curl -sSL https://raw.githubusercontent.com/legendu-net/github_actions_scripts/main/remove_branch.py \
+            | uv run --script - \
+            --repo ${{ github.repository }} \
+            --pattern '^(?!(main|dev)$)' \
+            --token ${{ secrets.GITHUBACTIONS }}
