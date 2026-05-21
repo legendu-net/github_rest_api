@@ -19,3 +19,4 @@ dist/
 doc*/_build/
 *.prof
 core
+.claude/settings.local.json

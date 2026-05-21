@@ -7,13 +7,16 @@ A simple Python wrapper for GitHub REST APIs, optimized for use in GitHub Action
 - **Purpose:** Provide a streamlined interface for interacting with GitHub's REST API
   and performing Git operations within automation scripts.
 - **Main Technologies:**
-  - **Python 3.11+**: Core language.
+  - **Python 3.12+**: Core language.
   - **requests**: For HTTP interactions with the GitHub API.
   - **dulwich**: A pure-Python implementation of Git for repository operations.
+  - **tenacity**: For retry logic on API requests.
+  - **tomli-w**: For writing TOML files.
   - **psutil**: For system and process utilities.
 - **Architecture:**
   - `github_rest_api/github.py`: Contains the `GitHub` class for handling API requests (GET, POST, DELETE, PUT, PATCH).
-  - `github_rest_api/actions/`: Focused utilities for GitHub Actions, including branch management and pushing changes.
+  - `github_rest_api/actions/github/`: Utilities for GitHub actions like creating pull requests, managing releases, and adding repositories.
+  - `github_rest_api/actions/container/`: Utilities for building and configuring container images.
   - `github_rest_api/actions/cargo/`: Specific support for Rust projects (benchmarking and profiling).
   - `github_rest_api/utils.py`: General-purpose utilities (versioning, partitioning).
 
@@ -28,6 +31,7 @@ This project uses `uv` for dependency and environment management.
 - **Code Formatting:**
   ```bash
   uv run ruff format ./
+  uv run pyproject-fmt pyproject.toml
   ```
 - **Linting:**
   ```bash
@@ -36,6 +40,7 @@ This project uses `uv` for dependency and environment management.
 - **Type Checking:**
   ```bash
   uv run ty check
+  uv run pyright
   ```
 - **Dependency Analysis:**
   ```bash
@@ -48,8 +53,8 @@ This project uses `uv` for dependency and environment management.
 
 ## Development Conventions
 
-- **Code Style:** Strictly follows `ruff` formatting and linting rules.
-- **Type Safety:** Uses `ty` (in addition to standard type hints) to ensure type correctness.
+- **Code Style:** Strictly follows `ruff` formatting and linting rules. `pyproject-fmt` is used for TOML formatting.
+- **Type Safety:** Uses `ty` and `pyright` to ensure type correctness.
 - **CI/CD:** Automated linting and formatting checks are performed
   on `push` to `dev`/`main` branches and on `pull_request` to `dev`.
 - **Git Operations:** Prefers `dulwich` for programmatic Git interactions
