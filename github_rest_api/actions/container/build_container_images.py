@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Sequence
 import datetime
 from pathlib import Path
 import subprocess as sp
@@ -59,7 +60,8 @@ def changed_files_between(
 def has_relevant_changes(
     commit1: str | bytes,
     commit2: str | bytes,
-    image_dirs: list[str],
+    image_dirs: Sequence[str],
+    paths_monitoring: Sequence[str] = (),
     name1: str = "",
     name2: str = "",
 ) -> bool:
@@ -69,20 +71,25 @@ def has_relevant_changes(
         commit1 = commit1.encode()
     if isinstance(commit2, str):
         commit2 = commit2.encode()
-    dirs = [Path(d).resolve() for d in image_dirs]
+    monitored = [Path(m).resolve() for m in (*image_dirs, *paths_monitoring)]
     for p in changed_files_between(commit1, commit2, name1=name1, name2=name2):
-        if any(p.resolve().is_relative_to(d) for d in dirs):
+        p_resolved = p.resolve()
+        if any(p_resolved.is_relative_to(m) for m in monitored):
             return True
     return False
 
 
-def has_relevant_changes_main_dev(image_dirs: list[str]) -> bool:
+def has_relevant_changes_main_dev(
+    image_dirs: Sequence[str], paths_monitoring: Sequence[str] = ()
+) -> bool:
     try:
         c_main = _get_commit(b"main")
         c_dev = _get_commit(b"dev")
     except (KeyError, NotGitRepository):
         return True
-    return has_relevant_changes(c_main, c_dev, image_dirs, name1="main", name2="dev")
+    return has_relevant_changes(
+        c_main, c_dev, image_dirs, paths_monitoring, name1="main", name2="dev"
+    )
 
 
 def _tag_date(tag: str) -> str:
@@ -127,11 +134,12 @@ def _build_image(
 def build_images(
     commit1: str,
     commit2: str,
-    image_dirs: list[str],
+    image_dirs: Sequence[str],
+    paths_monitoring: Sequence[str] = (),
     tool: str = "podman",
     registry: str = "quay.io/legendu",
 ):
-    if not has_relevant_changes(commit1, commit2, image_dirs):
+    if not has_relevant_changes(commit1, commit2, image_dirs, paths_monitoring):
         print(
             f"Skip building {tool} images as there are no relevant changes between {
                 commit1
@@ -139,7 +147,7 @@ def build_images(
         )
         return
     tags = ["next"]
-    if not has_relevant_changes_main_dev(image_dirs):
+    if not has_relevant_changes_main_dev(image_dirs, paths_monitoring):
         tags.append("latest")
     tags.extend([_tag_date(tag) for tag in tags])
     print(f"Building {tool} images using tags:", ", ".join(tags), "\n", flush=True)
@@ -207,6 +215,14 @@ def parse_args():
         metavar="FILE",
         help="Path to a file listing image directories to build, one per line.",
     )
+    parser.add_argument(
+        "--paths-monitoring",
+        dest="paths_monitoring",
+        nargs="*",
+        default=(),
+        metavar="PATH",
+        help="Extra paths to monitor for changes in addition to the image directories.",
+    )
     return parser.parse_args()
 
 
@@ -223,6 +239,7 @@ def main():
         args.commit1,
         args.commit2,
         _resolve_image_dirs(args),
+        paths_monitoring=args.paths_monitoring,
         tool=args.tool,
         registry=args.registry,
     )
