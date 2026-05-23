@@ -28,83 +28,15 @@ def parse_latest_version(repo: str) -> str:
 def update_version(
     containerfile: str | Path, version: str, pattern: str, replace: str
 ) -> None:
-    if containerfile == "":
-        containerfile = "Dockerfile" if Path("Dockerfile").exists() else "Containerfile"
+    if not pattern:
+        raise ValueError("The pattern to replace must not be empty.")
     if isinstance(containerfile, str):
-        containerfile = Path(containerfile).resolve()
-    match containerfile.parent.name:
-        case "docker-base":
-            return _update_version_docker_base(
-                containerfile=containerfile, version=version
-            )
-        case "docker-jupyterlab":
-            return _update_version_docker_jupyterlab(
-                containerfile=containerfile, version=version
-            )
-        case "docker-jupyterhub":
-            return _update_version_docker_jupyterhub(
-                containerfile=containerfile, version=version
-            )
-        case "docker-vscode-server":
-            return _update_version_docker_vscode_server(
-                containerfile=containerfile, version=version
-            )
-        case _:
-            if not pattern:
-                raise ValueError("A version pattern must be specified!")
-            return _update_version_default(
-                containerfile=containerfile,
-                version=version,
-                pattern=pattern,
-                replace=replace,
-            )
-
-
-def _update_version_default(
-    containerfile: Path, version: str, pattern: str, replace: str
-) -> None:
-    text = containerfile.read_text()
-    text = re.sub(pattern, replace.format(version=version), text)
-    containerfile.write_text(text)
-
-
-def _update_version_docker_base(containerfile: Path, version: str) -> None:
-    _update_version_default(
-        containerfile=containerfile,
-        version=version,
-        pattern=r"-v v?\d+\.\d+\.\d+",
-        replace="-v v{version}",
-    )
-
-
-def _update_version_docker_jupyterlab(containerfile: Path, version: str) -> None:
-    version = next_minor_or_strip_patch(version, 3)
-    _update_version_default(
-        containerfile=containerfile,
-        version=version,
-        pattern=r",<\d+\.\d+\.0",
-        replace=",<{version}",
-    )
-
-
-def _update_version_docker_jupyterhub(containerfile: Path, version: str) -> None:
-    version = next_minor_or_strip_patch(version, 3)
-    _update_version_default(
-        containerfile=containerfile,
-        version=version,
-        pattern=r"jupyterhub<\d+\.\d+\.0",
-        replace="jupyterhub<{version}",
-    )
-
-
-def _update_version_docker_vscode_server(containerfile: Path, version: str) -> None:
-    version = next_minor_or_strip_patch(version, 3)
-    _update_version_default(
-        containerfile=containerfile,
-        version=version,
-        pattern=r",<\d+\.\d+\.0",
-        replace=",<{version}",
-    )
+        containerfile = Path(containerfile)
+    original = containerfile.read_text(encoding="utf-8")
+    repl = replace.replace("{version}", version)
+    updated = re.sub(pattern, lambda _: repl, original)
+    if updated != original:
+        containerfile.write_text(updated, encoding="utf-8")
 
 
 def _branch_prefix(repo: str) -> str:
@@ -134,7 +66,7 @@ def parse_args():
     parser.add_argument(
         "--containerfile",
         dest="containerfile",
-        default="",
+        required=True,
         help="The Dockerfile or Containerfile to update.",
     )
     parser.add_argument(
@@ -152,14 +84,24 @@ def parse_args():
     parser.add_argument(
         "--pattern",
         dest="pattern",
-        default="",
+        required=True,
         help="The version pattern to replace.",
     )
     parser.add_argument(
         "--replace",
         dest="replace",
-        default="",
+        required=True,
         help="The replacement for the matched version pattern.",
+    )
+    parser.add_argument(
+        "--next-minor-or-strip-patch",
+        dest="next_minor_or_strip_patch",
+        type=int,
+        default=None,
+        help=(
+            "If provided, transform the version with next_minor_or_strip_patch(version, N): "
+            "bump to next minor if patch >= N, otherwise strip patch to 0."
+        ),
     )
     return parser.parse_args()
 
@@ -188,6 +130,8 @@ def main():
         return
     checkout_branch(args.repo)
     version = parse_latest_version(repo=args.repo)
+    if args.next_minor_or_strip_patch is not None:
+        version = next_minor_or_strip_patch(version, args.next_minor_or_strip_patch)
     update_version(
         containerfile=args.containerfile,
         version=version,
