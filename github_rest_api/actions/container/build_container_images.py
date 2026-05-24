@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess as sp
 import sys
 from typing import cast
+import yaml
 from dulwich.repo import Repo
 from dulwich.refs import Ref
 from dulwich.objects import Commit
@@ -209,11 +210,11 @@ def parse_args():
     )
     group.add_argument(
         "-f",
-        "--file-image-dirs",
-        dest="file_image_dirs",
+        "--yaml-image-dirs",
+        dest="yaml_image_dirs",
         default=None,
         metavar="FILE",
-        help="Path to a file listing image directories to build, one per line.",
+        help="Path to a YAML file containing a list of image dirs to build.",
     )
     parser.add_argument(
         "--paths-monitoring",
@@ -229,8 +230,17 @@ def parse_args():
 def _resolve_image_dirs(args: argparse.Namespace) -> list[str]:
     if args.image_dirs:
         return args.image_dirs
-    with Path(args.file_image_dirs).open(encoding="utf-8") as fin:
-        return [s for line in fin if (s := line.strip()) and not s.startswith("#")]
+    with Path(args.yaml_image_dirs).open(encoding="utf-8") as fin:
+        data = yaml.safe_load(fin)
+        if data is None:
+            return []
+        if not isinstance(data, list) or not all(
+            isinstance(item, str) for item in data
+        ):
+            raise ValueError(
+                f"{args.yaml_image_dirs} must contain a YAML list of strings."
+            )
+        return [s for item in data if (s := item.strip())]
 
 
 def main():
