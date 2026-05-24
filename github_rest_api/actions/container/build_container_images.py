@@ -132,6 +132,12 @@ def _build_image(
         _push_image(f"{image}:{tag}", tool=tool)
 
 
+def _validate_paths_exist(paths: Sequence[str], label: str) -> None:
+    missing = [p for p in paths if not Path(p).exists()]
+    if missing:
+        sys.exit(f"\nError: the following {label} do not exist:\n{'\n'.join(missing)}")
+
+
 def build_images(
     commit1: str,
     commit2: str,
@@ -140,6 +146,8 @@ def build_images(
     tool: str = "podman",
     registry: str = "quay.io/legendu",
 ):
+    _validate_paths_exist(image_dirs, "image dirs")
+    _validate_paths_exist(paths_monitoring, "monitored paths")
     if not has_relevant_changes(commit1, commit2, image_dirs, paths_monitoring):
         print(
             f"Skip building {tool} images as there are no relevant changes between {
@@ -213,7 +221,7 @@ def parse_args():
         "--yaml-image-dirs",
         dest="yaml_image_dirs",
         default=None,
-        metavar="YAML",
+        metavar="YAML_FILE",
         help="Path to a YAML file containing a list of image dirs to build.",
     )
     parser.add_argument(
