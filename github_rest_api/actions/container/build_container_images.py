@@ -209,11 +209,11 @@ def parse_args():
         help="Explicit list of image directories to build.",
     )
     group.add_argument(
-        "-f",
+        "-y",
         "--yaml-image-dirs",
         dest="yaml_image_dirs",
         default=None,
-        metavar="FILE",
+        metavar="YAML",
         help="Path to a YAML file containing a list of image dirs to build.",
     )
     parser.add_argument(
