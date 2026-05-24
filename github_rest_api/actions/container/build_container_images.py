@@ -229,8 +229,8 @@ def parse_args():
 def _resolve_image_dirs(args: argparse.Namespace) -> list[str]:
     if args.image_dirs:
         return args.image_dirs
-    lines = Path(args.file_image_dirs).read_text().splitlines()
-    return [line.strip() for line in lines if line.strip()]
+    with Path(args.file_image_dirs).open(encoding="utf-8") as fin:
+        return [s for line in fin if (s := line.strip()) and not s.startswith("#")]
 
 
 def main():
