@@ -14,8 +14,7 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
       - name: Create PR to dev
         run: | 
-          curl -sSL https://raw.githubusercontent.com/legendu-net/github_actions_scripts/main/create_pull_request.py \
-            | uv run --script - \
+          uvx --from github-rest-api@latest create_pull_request \
             --head-branch ${{ github.ref_name }} \
             --base-branch dev \
             --token ${{ secrets.GITHUBACTIONS }}
