@@ -1,6 +1,7 @@
 import argparse
 import json
 import shutil
+import sys
 import tomllib
 import tomli_w
 from pathlib import Path
@@ -69,14 +70,15 @@ def parse_args(args=None):
     return parser.parse_args(args=args)
 
 
-def main():
+def main() -> int:
     args = parse_args()
     runtimes = set(args.runtime) if args.runtime else {"docker", "podman"}
     if "docker" in runtimes:
         config_docker(args.docker_data_root)
     if "podman" in runtimes:
         config_podman(args.podman_graphroot)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -135,7 +135,9 @@ def _build_image(
 def _validate_paths_exist(paths: Sequence[str], label: str) -> None:
     missing = [p for p in paths if not Path(p).exists()]
     if missing:
-        sys.exit(f"\nError: the following {label} do not exist:\n{'\n'.join(missing)}")
+        raise FileNotFoundError(
+            f"\nError: the following {label} do not exist:\n{'\n'.join(missing)}"
+        )
 
 
 def build_images(
@@ -168,7 +170,9 @@ def build_images(
             print(f"Error building {image_dir}: {e}", flush=True)
             failures.append(image_dir)
     if failures:
-        sys.exit(f"\n\nError: failed to build images: {', '.join(failures)}\n")
+        raise RuntimeError(
+            f"\n\nError: failed to build images: {', '.join(failures)}\n"
+        )
 
 
 def parse_args():
@@ -251,17 +255,22 @@ def _resolve_image_dirs(args: argparse.Namespace) -> list[str]:
         return [s for item in data if (s := item.strip())]
 
 
-def main():
+def main() -> int:
     args = parse_args()
-    build_images(
-        args.commit1,
-        args.commit2,
-        _resolve_image_dirs(args),
-        paths_monitoring=args.paths_monitoring,
-        tool=args.tool,
-        registry=args.registry,
-    )
+    try:
+        build_images(
+            args.commit1,
+            args.commit2,
+            _resolve_image_dirs(args),
+            paths_monitoring=args.paths_monitoring,
+            tool=args.tool,
+            registry=args.registry,
+        )
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

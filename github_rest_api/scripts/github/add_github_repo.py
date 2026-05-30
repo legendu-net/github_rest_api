@@ -77,7 +77,7 @@ def parse_args(args=None, namespace=None):
 def _validate_repo(repo: str) -> None:
     parts = repo.split("/")
     if len(parts) != 2 or not parts[0] or not parts[1]:
-        sys.exit(f"Invalid repo format '{repo}'. Expected 'owner/repo'.")
+        raise ValueError(f"Invalid repo format '{repo}'. Expected 'owner/repo'.")
 
 
 def _create_remote_repo(
@@ -142,7 +142,7 @@ def add_github_repo(
     if not token:
         token = getpass.getpass("Please enter your GitHub token: ")
         if not token:
-            sys.exit(
+            raise ValueError(
                 "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
             )
     repo = repo.strip()
@@ -177,18 +177,23 @@ def _add_workflow(path: Path, language: str, workflow_dir: Path | None = None) -
             shutil.copy2(yaml, dir_dest)
 
 
-def main():
+def main() -> int:
     args = parse_args()
-    add_github_repo(
-        repo=args.repo,
-        private=args.private,
-        language=args.language,
-        is_owner_user=args.is_owner_user,
-        dir_=args.dir,
-        token=args.token,
-        branches=args.branches,
-    )
+    try:
+        add_github_repo(
+            repo=args.repo,
+            private=args.private,
+            language=args.language,
+            is_owner_user=args.is_owner_user,
+            dir_=args.dir,
+            token=args.token,
+            branches=args.branches,
+        )
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

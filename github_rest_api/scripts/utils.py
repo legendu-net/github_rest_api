@@ -1,10 +1,13 @@
 """Util functions for GitHub actions."""
 
-from typing import Iterable
+import tomllib
+from typing import Any, Iterable
 from pathlib import Path
+from collections.abc import Sequence
 import random
 from dulwich import porcelain
 from dulwich.repo import Repo
+from dulwich.errors import NotGitRepository
 
 
 def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):
@@ -73,3 +76,68 @@ def commit_profiling(prof_dir: str | Path):
     """
     porcelain.add(paths=prof_dir)
     porcelain.commit(message="Updating profiling results.")
+
+
+def find_project_root(path: Path | None = None) -> Path | None:
+    if path is None:
+        path = Path.cwd()
+    while path != path.parent:
+        if (path / ".git").exists():
+            return path
+        path = path.parent
+    return None
+
+
+def get_toml_value(path: Path, keys: Sequence[str]) -> Any:
+    if not keys or not path.exists():
+        return None
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError:
+        return None
+    for key in keys[:-1]:
+        data = data.get(key, {}) if isinstance(data, dict) else {}
+    return data.get(keys[-1]) if isinstance(data, dict) else None
+
+
+def get_project_version(root: Path) -> str:
+    for path, keys in [
+        (root / "pyproject.toml", ["project", "version"]),
+        (root / "Cargo.toml", ["package", "version"]),
+    ]:
+        version = get_toml_value(path, keys)
+        if isinstance(version, str) and version.strip():
+            return version
+    return ""
+
+
+def parse_github_repo(url: str) -> str:
+    delimiters = ["github.com/", "github.com:"]
+    delim = next((d for d in delimiters if d in url), "")
+    if not delim:
+        return ""
+    return url.split(delim)[-1].removesuffix(".git").rstrip("/")
+
+
+def _get_repo_from_toml(path: Path, keys: Sequence[str]) -> str:
+    value = get_toml_value(path, keys)
+    return parse_github_repo(value) if isinstance(value, str) else ""
+
+
+def get_repo(root: Path) -> str | None:
+    if repo := _get_repo_from_toml(
+        root / "pyproject.toml", ["project", "urls", "Repository"]
+    ):
+        return repo
+    if repo := _get_repo_from_toml(root / "Cargo.toml", ["package", "repository"]):
+        return repo
+    try:
+        repo = Repo(root)
+        config = repo.get_config()
+        url = config.get((b"remote", b"origin"), b"url").decode().strip()
+        if repo_name := parse_github_repo(url):
+            return repo_name
+    except (NotGitRepository, KeyError):
+        pass
+    return None

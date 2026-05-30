@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jj log *)",
+      "Bash(jj bookmark list *)",
+      "Bash(jj diff *)"
+    ]
+  }
+}

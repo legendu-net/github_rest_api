@@ -4,6 +4,7 @@ The branch is updated (using dev) before creating the PR.
 
 from argparse import ArgumentParser, Namespace
 import os
+import sys
 from github_rest_api import Repository
 
 
@@ -36,7 +37,7 @@ def parse_args(args=None, namespace=None) -> Namespace:
     return parser.parse_args(args=args, namespace=namespace)
 
 
-def main():
+def main() -> int:
     """Main entrance of the script,
     which creates a PR from the specified branch to dev.
     The branch is updated (using dev) before creating the PR.
@@ -44,7 +45,7 @@ def main():
     args = parse_args()
     # skip branches with the pattern _*
     if args.head_branch.startswith("_"):
-        return
+        return 0
     repo = Repository(args.token, os.environ["GITHUB_REPOSITORY"])
     repo.create_pull_request(
         {
@@ -53,7 +54,8 @@ def main():
             "title": f"Merge {args.head_branch} Into {args.base_branch}",
         },
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

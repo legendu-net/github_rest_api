@@ -1,6 +1,8 @@
 import argparse
 import re
+import sys
 import datetime
+from requests.exceptions import RequestException
 from github_rest_api import Repository
 
 
@@ -93,10 +95,15 @@ def remove_branch(token: str, repo: str, pattern: str) -> None:
         repository.delete_branch(branch_name)
 
 
-def main():
+def main() -> int:
     args = parse_args()
-    remove_branch(token=args.token, repo=args.repo, pattern=args.pattern)
+    try:
+        remove_branch(token=args.token, repo=args.repo, pattern=args.pattern)
+    except RequestException as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

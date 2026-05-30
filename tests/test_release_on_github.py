@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 import pytest
-from github_rest_api.actions.github.release_on_github import _get_release_tag
+from github_rest_api.scripts.github.release_on_github import _get_release_tag
 
 ROOT = Path(".")
 
@@ -21,7 +21,7 @@ def test_tag_with_surrounding_whitespace():
 
 def test_empty_tag_falls_back_to_version():
     with patch(
-        "github_rest_api.actions.github.release_on_github.get_version",
+        "github_rest_api.scripts.github.release_on_github.get_project_version",
         return_value="1.2.3",
     ):
         assert _get_release_tag("", ROOT) == "v1.2.3"
@@ -29,7 +29,7 @@ def test_empty_tag_falls_back_to_version():
 
 def test_whitespace_tag_falls_back_to_version():
     with patch(
-        "github_rest_api.actions.github.release_on_github.get_version",
+        "github_rest_api.scripts.github.release_on_github.get_project_version",
         return_value="1.2.3",
     ):
         assert _get_release_tag("   ", ROOT) == "v1.2.3"
@@ -37,7 +37,8 @@ def test_whitespace_tag_falls_back_to_version():
 
 def test_empty_tag_no_version_exits():
     with patch(
-        "github_rest_api.actions.github.release_on_github.get_version", return_value=""
+        "github_rest_api.scripts.github.release_on_github.get_project_version",
+        return_value="",
     ):
         with pytest.raises(ValueError):
             _get_release_tag("", ROOT)
