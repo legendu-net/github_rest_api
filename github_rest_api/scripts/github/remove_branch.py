@@ -2,7 +2,6 @@ import argparse
 import re
 import sys
 import datetime
-from requests.exceptions import RequestException
 from github_rest_api import Repository
 
 
@@ -99,7 +98,7 @@ def main() -> int:
     args = parse_args()
     try:
         remove_branch(token=args.token, repo=args.repo, pattern=args.pattern)
-    except RequestException as e:
+    except Exception as e:
         print(str(e), file=sys.stderr)
         return 1
     return 0

@@ -73,10 +73,14 @@ def parse_args(args=None):
 def main() -> int:
     args = parse_args()
     runtimes = set(args.runtime) if args.runtime else {"docker", "podman"}
-    if "docker" in runtimes:
-        config_docker(args.docker_data_root)
-    if "podman" in runtimes:
-        config_podman(args.podman_graphroot)
+    try:
+        if "docker" in runtimes:
+            config_docker(args.docker_data_root)
+        if "podman" in runtimes:
+            config_podman(args.podman_graphroot)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
