@@ -94,7 +94,7 @@ def get_toml_value(path: Path, keys: Sequence[str]) -> Any:
     try:
         with path.open("rb") as f:
             data = tomllib.load(f)
-    except tomllib.TOMLDecodeError:
+    except Exception:
         return None
     for key in keys[:-1]:
         data = data.get(key, {}) if isinstance(data, dict) else {}
