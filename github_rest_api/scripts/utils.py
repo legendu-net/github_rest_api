@@ -117,7 +117,7 @@ def parse_github_repo(url: str) -> str:
     delim = next((d for d in delimiters if d in url), "")
     if not delim:
         return ""
-    return url.split(delim)[-1].removesuffix(".git").rstrip("/")
+    return url.split(delim)[-1].rstrip('/') .removesuffix('.git')
 
 
 def _get_repo_from_toml(path: Path, keys: Sequence[str]) -> str:
