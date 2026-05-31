@@ -28,7 +28,9 @@ def _get_release_tag(tag: str, root: Path, validate: bool = True) -> str:
     semver_pattern = r"v?\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?"
     if not re.fullmatch(semver_pattern, tag):
         raise ValueError(
-            f"Tag '{tag}' is not in a semantic versioning format. Use --no-validate to skip."
+            f"Tag '{
+                tag
+            }' is not in a semantic versioning format. Use --no-validate to skip."
         )
     normalized = tag if tag.startswith("v") else f"v{tag}"
     if normalized != tag:
@@ -52,13 +54,6 @@ def release_on_github(
         If not specified, the GITHUB_TOKEN environment variable is used.
     :param validate: If True, validate the tag against semantic versioning format before creating the release.
     """
-    token = token or os.getenv("GITHUB_TOKEN", "")
-    if not token:
-        token = getpass.getpass("Please enter your GitHub token: ")
-        if not token:
-            raise ValueError(
-                "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
-            )
     root = find_project_root()
     if not root:
         raise FileNotFoundError("Could not find project root (no .git found).")
@@ -69,6 +64,13 @@ def release_on_github(
     if not repo_name:
         raise ValueError("Could not find GitHub repository name.")
 
+    token = token or os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        token = getpass.getpass("Please enter your GitHub token: ")
+        if not token:
+            raise ValueError(
+                "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
+            )
     repo = Repository(token=token, repo=repo_name)
     data = {
         "tag_name": tag,
