@@ -15,9 +15,9 @@ A simple Python wrapper for GitHub REST APIs, optimized for use in GitHub Action
   - **psutil**: For system and process utilities.
 - **Architecture:**
   - `github_rest_api/github.py`: Contains the `GitHub` class for handling API requests (GET, POST, DELETE, PUT, PATCH).
-  - `github_rest_api/actions/github/`: Utilities for GitHub actions like creating pull requests, managing releases, and adding repositories.
-  - `github_rest_api/actions/container/`: Utilities for building and configuring container images.
-  - `github_rest_api/actions/cargo/`: Specific support for Rust projects (benchmarking and profiling).
+  - `github_rest_api/scripts/github/`: Utilities for GitHub actions like creating pull requests, managing releases, and adding repositories.
+  - `github_rest_api/scripts/container/`: Utilities for building and configuring container images.
+  - `github_rest_api/scripts/cargo/`: Specific support for Rust projects (benchmarking and profiling).
   - `github_rest_api/utils.py`: General-purpose utilities (versioning, partitioning).
 
 ## Building and Running

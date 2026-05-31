@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import os
+import sys
 from pathlib import Path
 import re
 from dulwich import porcelain
@@ -124,22 +125,27 @@ def checkout_branch(repo: str):
     porcelain.checkout(repo=".", target=branch)
 
 
-def main():
+def main() -> int:
     args = parse_args()
-    if has_open_pr(head_prefix=_branch_prefix(args.repo)):
-        return
-    checkout_branch(args.repo)
-    version = parse_latest_version(repo=args.repo)
-    if args.next_minor_or_strip_patch is not None:
-        version = next_minor_or_strip_patch(version, args.next_minor_or_strip_patch)
-    update_version(
-        containerfile=args.containerfile,
-        version=version,
-        pattern=args.pattern,
-        replace=args.replace,
-    )
-    push_changes(repo=args.repo, token=args.token)
+    try:
+        if has_open_pr(head_prefix=_branch_prefix(args.repo)):
+            return 0
+        checkout_branch(args.repo)
+        version = parse_latest_version(repo=args.repo)
+        if args.next_minor_or_strip_patch is not None:
+            version = next_minor_or_strip_patch(version, args.next_minor_or_strip_patch)
+        update_version(
+            containerfile=args.containerfile,
+            version=version,
+            pattern=args.pattern,
+            replace=args.replace,
+        )
+        push_changes(repo=args.repo, token=args.token)
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

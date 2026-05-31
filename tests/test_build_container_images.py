@@ -1,6 +1,6 @@
 from pathlib import Path
 from unittest.mock import patch
-from github_rest_api.actions.container.build_container_images import (
+from github_rest_api.scripts.container.build_container_images import (
     has_relevant_changes,
 )
 
@@ -19,7 +19,7 @@ def test_has_relevant_changes_empty_commits():
 
 
 @patch(
-    "github_rest_api.actions.container.build_container_images.changed_files_between",
+    "github_rest_api.scripts.container.build_container_images.changed_files_between",
     return_value=[],
 )
 def test_has_relevant_changes_no_changes(mock_changed):
@@ -28,7 +28,7 @@ def test_has_relevant_changes_no_changes(mock_changed):
 
 
 @patch(
-    "github_rest_api.actions.container.build_container_images.changed_files_between",
+    "github_rest_api.scripts.container.build_container_images.changed_files_between",
     return_value=[IRRELEVANT_FILE],
 )
 def test_has_relevant_changes_only_irrelevant_files(mock_changed):
@@ -37,7 +37,7 @@ def test_has_relevant_changes_only_irrelevant_files(mock_changed):
 
 
 @patch(
-    "github_rest_api.actions.container.build_container_images.changed_files_between",
+    "github_rest_api.scripts.container.build_container_images.changed_files_between",
     return_value=[RELEVANT_FILE],
 )
 def test_has_relevant_changes_with_relevant_file(mock_changed):
@@ -46,7 +46,7 @@ def test_has_relevant_changes_with_relevant_file(mock_changed):
 
 
 @patch(
-    "github_rest_api.actions.container.build_container_images.changed_files_between",
+    "github_rest_api.scripts.container.build_container_images.changed_files_between",
     return_value=[IRRELEVANT_FILE, RELEVANT_FILE],
 )
 def test_has_relevant_changes_mixed_files(mock_changed):
@@ -55,7 +55,7 @@ def test_has_relevant_changes_mixed_files(mock_changed):
 
 
 @patch(
-    "github_rest_api.actions.container.build_container_images.changed_files_between",
+    "github_rest_api.scripts.container.build_container_images.changed_files_between",
     return_value=[RELEVANT_FILE],
 )
 def test_has_relevant_changes_bytes_commits(mock_changed):
