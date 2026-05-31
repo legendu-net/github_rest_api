@@ -7,7 +7,6 @@ from collections.abc import Sequence
 import random
 from dulwich import porcelain
 from dulwich.repo import Repo
-from dulwich.errors import NotGitRepository
 
 
 def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):
@@ -117,7 +116,7 @@ def parse_github_repo(url: str) -> str:
     delim = next((d for d in delimiters if d in url), "")
     if not delim:
         return ""
-    return url.split(delim)[-1].rstrip('/') .removesuffix('.git')
+    return url.split(delim)[-1].rstrip("/").removesuffix(".git")
 
 
 def _get_repo_from_toml(path: Path, keys: Sequence[str]) -> str:
@@ -138,6 +137,6 @@ def get_repo(root: Path) -> str | None:
         url = config.get((b"remote", b"origin"), b"url").decode().strip()
         if repo_name := parse_github_repo(url):
             return repo_name
-    except (NotGitRepository, KeyError):
+    except Exception:
         pass
     return None
