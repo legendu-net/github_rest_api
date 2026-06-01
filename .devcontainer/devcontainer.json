@@ -1,0 +1,26 @@
+{
+  "name": "Fedora Codespace",
+  "image": "quay.io/legendu/base",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Google.geminicodeassist",
+        "anthropic.claude-code",
+        "asvetliakov.vscode-neovim",
+        "mechatroner.rainbow-csv",
+        "usernamehw.errorlens",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "astral-sh.ty",
+        "golang.Go",
+        "njpwerner.autodocstring",
+        "rust-lang.rust-analyzer",
+        "serayuzgur.crates",
+        "vadimcn.vscode-lldb",
+        "fwcd.kotlin",
+        "karsten7.mojo-vscode",
+        "ReneSaarsoo.sql-formatter-vsc"
+      ]
+    }
+  }
+}
