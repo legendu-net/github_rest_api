@@ -2,6 +2,11 @@
   "name": "Fedora Codespace",
   "image": "quay.io/legendu/base",
   "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:1": {
+        "username": "vscode"
+    }
+  },
   "customizations": {
     "vscode": {
       "settings": {
