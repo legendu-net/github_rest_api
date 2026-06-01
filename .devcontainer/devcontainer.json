@@ -1,8 +1,12 @@
 {
   "name": "Fedora Codespace",
   "image": "quay.io/legendu/base",
+  "remoteUser": "vscode",
   "customizations": {
     "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "fish"
+      },
       "extensions": [
         "Google.geminicodeassist",
         "anthropic.claude-code",
@@ -15,7 +19,7 @@
         "golang.Go",
         "njpwerner.autodocstring",
         "rust-lang.rust-analyzer",
-        "serayuzgur.crates",
+        "fill-labs.dependi",
         "vadimcn.vscode-lldb",
         "fwcd.kotlin",
         "karsten7.mojo-vscode",
