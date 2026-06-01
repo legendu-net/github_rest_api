@@ -1,6 +1,6 @@
 {
   "name": "Fedora Codespace",
-  "image": "quay.io/legendu/codespaces",
+  "image": "quay.io/legendu/codespaces:next",
   "remoteUser": "vscode",
   "customizations": {
     "vscode": {
