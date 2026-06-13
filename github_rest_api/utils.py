@@ -1,6 +1,8 @@
 """Some generally useful util functions."""
 
+from collections.abc import Sequence
 from itertools import tee, filterfalse
+import re
 
 
 def partition(pred, iterable):
@@ -10,6 +12,27 @@ def partition(pred, iterable):
     """
     it1, it2 = tee(iterable)
     return filter(pred, it1), filterfalse(pred, it2)
+
+
+def compile_patterns(patterns: str | Sequence[str] | None) -> list[re.Pattern[str]]:
+    """Compile a list of regular expression patterns.
+
+    :param patterns: A list of regular expression patterns to compile.
+    :return: A list of compiled regular expression patterns.
+    """
+    if not patterns:
+        return []
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    compiled = []
+    for pattern in patterns:
+        try:
+            compiled.append(re.compile(pattern))
+        except re.error as e:
+            raise ValueError(
+                f"Invalid regular expression pattern '{pattern}': {e}"
+            ) from e
+    return compiled
 
 
 def strip_patch_version(version: str) -> str:
