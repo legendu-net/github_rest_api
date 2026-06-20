@@ -1,10 +1,25 @@
 """Simple wrapper of GitHub REST APIs."""
 
 from abc import ABCMeta, abstractmethod
+from base64 import b64encode
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any, Callable
 from pathlib import Path
 import requests
+from nacl import encoding, public
+
+URL_API = "https://api.github.com"
+
+
+def _encrypt_secret(public_key: str, value: str) -> str:
+    """Encrypt a secret value using a LibSodium sealed box.
+    :param public_key: The base64-encoded public key to encrypt against.
+    :param value: The plaintext secret value to encrypt.
+    """
+    pkey = public.PublicKey(public_key.encode(), encoding.Base64Encoder)
+    encrypted = public.SealedBox(pkey).encrypt(value.encode())
+    return b64encode(encrypted).decode()
 
 
 def build_http_headers(token: str) -> dict[str, str]:
@@ -36,6 +51,12 @@ class GitHub:
     def _get(
         self, url: str, raise_for_status: bool = True, **kwargs
     ) -> requests.Response:
+        """Send a GET request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `params`) forwarded
+            to `requests.get`.
+        """
         resp = requests.get(
             url=url,
             headers=self._headers,
@@ -49,6 +70,13 @@ class GitHub:
     def _post(
         self, url: str, headers=None, raise_for_status: bool = True, **kwargs
     ) -> requests.Response:
+        """Send a POST request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param headers: Request headers; defaults to the standard auth headers.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.post`.
+        """
         if headers is None:
             headers = self._headers
         resp = requests.post(
@@ -67,17 +95,32 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
-    def _put(self, url, raise_for_status: bool = True) -> requests.Response:
+    def _put(
+        self, url: str, raise_for_status: bool = True, **kwargs
+    ) -> requests.Response:
+        """Send a PUT request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.put`.
+        """
         resp = requests.put(
             url=url,
             headers=self._headers,
             timeout=10,
+            **kwargs,
         )
         if raise_for_status:
             resp.raise_for_status()
         return resp
 
     def _patch(self, url, raise_for_status: bool = True, **kwargs) -> requests.Response:
+        """Send a PATCH request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.patch`.
+        """
         resp = requests.patch(
             url=url,
             headers=self._headers,
@@ -118,8 +161,7 @@ class Repository(GitHub):
         """
         super().__init__(token)
         self._repo = repo
-        self._url = "https://api.github.com/repos"
-        self._url_repo = f"{self._url}/{repo}"
+        self._url_repo = f"{URL_API}/repos/{repo}"
         self._url_tags = f"{self._url_repo}/tags"
         self._url_transfer = f"{self._url_repo}/transfer"
         self._url_pull = f"{self._url_repo}/pulls"
@@ -127,6 +169,7 @@ class Repository(GitHub):
         self._url_refs = f"{self._url_repo}/git/refs"
         self._url_issues = f"{self._url_repo}/issues"
         self._url_releases = f"{self._url_repo}/releases"
+        self._url_secrets = f"{self._url_repo}/actions/secrets"
 
     def get_releases(self, n: int = 0) -> list[dict[str, Any]]:
         """List releases in this repository."""
@@ -171,7 +214,9 @@ class Repository(GitHub):
             path = Path(path)
         with path.open(mode="rb") as fin:
             return self._post(
-                url=f"{self._url_releases.replace('api', 'uploads', 1)}/{release}/assets",
+                url=f"{self._url_releases.replace('api', 'uploads', 1)}/{
+                    release
+                }/assets",
                 params={
                     "name": name,
                 },
@@ -284,6 +329,42 @@ class Repository(GitHub):
         """
         return self.delete_ref(ref=f"heads/{branch}")
 
+    def delete_secret(self, name: str) -> requests.Response:
+        """Delete a secret from this repository.
+        :param name: The name of the secret to delete.
+        """
+        if not isinstance(name, str):
+            raise ValueError("A string value is required for `name`.")
+        return self._delete(
+            url=f"{self._url_secrets}/{name}",
+        )
+
+    def get_secret_public_key(self) -> dict[str, Any]:
+        """Get the public key for encrypting secrets in this repository."""
+        return self._get(url=f"{self._url_secrets}/public-key").json()
+
+    def create_or_update_secret(
+        self, name: str, value: str, public_key: dict[str, Any]
+    ) -> requests.Response:
+        """Create or update a secret in this repository.
+        :param name: The name of the secret.
+        :param value: The plaintext value of the secret.
+        :param public_key: A public key (as returned by `get_secret_public_key`)
+            to encrypt the secret with. Fetch it once and reuse it to avoid a
+            redundant request when creating or updating multiple secrets.
+        """
+        if not isinstance(name, str):
+            raise ValueError("A string value is required for `name`.")
+        if not isinstance(value, str):
+            raise ValueError("A string value is required for `value`.")
+        return self._put(
+            url=f"{self._url_secrets}/{name}",
+            json={
+                "encrypted_value": _encrypt_secret(public_key["key"], value),
+                "key_id": public_key["key_id"],
+            },
+        )
+
     def pr_has_change(
         self, pr_number: int, pred: Callable[[str], bool] = lambda _: True
     ) -> bool:
@@ -344,6 +425,12 @@ class RepositoryType(StrEnum):
     PRIVATE = "private"
 
 
+class SecretVisibility(StrEnum):
+    ALL = "all"
+    PRIVATE = "private"
+    SELECTED = "selected"
+
+
 class Owner(GitHub, metaclass=ABCMeta):
     """An abstract owner class representing an organization or user."""
 
@@ -354,6 +441,7 @@ class Owner(GitHub, metaclass=ABCMeta):
         """
         super().__init__(token)
         self._owner = owner
+        self._url_owner = ""
         self._url_repos = ""
         self._url_create_repo = ""
 
@@ -376,6 +464,14 @@ class Owner(GitHub, metaclass=ABCMeta):
     def create_repository(
         self, name: str, description: str = "", private: bool = True, **kwargs
     ) -> dict[str, Any]:
+        """Create a repository for this owner.
+        :param name: The name of the repository.
+        :param description: A short description of the repository.
+        :param private: Whether the repository is private.
+        :param kwargs: Additional keyword arguments forwarded to `_post`
+            (e.g. `params` or `raise_for_status`). Note `json` is already set
+            from the other parameters and must not be passed here.
+        """
         data = {
             "name": name,
             "description": description,
@@ -400,8 +496,9 @@ class User(Owner):
         self._set_urls()
 
     def _set_urls(self) -> None:
-        self._url_repos = f"https://api.github.com/users/{self._owner}/repos"
-        self._url_create_repo = "https://api.github.com/user/repos"
+        self._url_owner = f"{URL_API}/users/{self._owner}"
+        self._url_repos = f"{self._url_owner}/repos"
+        self._url_create_repo = f"{URL_API}/user/repos"
 
 
 class Organization(Owner):
@@ -416,5 +513,60 @@ class Organization(Owner):
         self._set_urls()
 
     def _set_urls(self) -> None:
-        self._url_repos = f"https://api.github.com/orgs/{self._owner}/repos"
+        self._url_owner = f"{URL_API}/orgs/{self._owner}"
+        self._url_repos = f"{self._url_owner}/repos"
         self._url_create_repo = self._url_repos
+        self._url_secrets = f"{self._url_owner}/actions/secrets"
+
+    def delete_secret(self, name: str) -> requests.Response:
+        """Delete an organization secret.
+        :param name: The name of the secret to delete.
+        """
+        if not isinstance(name, str):
+            raise ValueError("A string value is required for `name`.")
+        return self._delete(
+            url=f"{self._url_secrets}/{name}",
+        )
+
+    def get_secret_public_key(self) -> dict[str, Any]:
+        """Get the public key for encrypting secrets in this organization."""
+        return self._get(url=f"{self._url_secrets}/public-key").json()
+
+    def create_or_update_secret(
+        self,
+        name: str,
+        value: str,
+        public_key: dict[str, Any],
+        visibility: SecretVisibility = SecretVisibility.ALL,
+        selected_repository_ids: Sequence[int] = (),
+    ) -> requests.Response:
+        """Create or update an organization secret.
+        :param name: The name of the secret.
+        :param value: The plaintext value of the secret.
+        :param public_key: A public key (as returned by `get_secret_public_key`)
+            to encrypt the secret with. Fetch it once and reuse it to avoid a
+            redundant request when creating or updating multiple secrets.
+        :param visibility: Which repositories can access the secret
+            (all, private, or selected).
+        :param selected_repository_ids: Repository IDs that can access the secret
+            when visibility is `selected`.
+        """
+        if not isinstance(name, str):
+            raise ValueError("A string value is required for `name`.")
+        if not isinstance(value, str):
+            raise ValueError("A string value is required for `value`.")
+        if selected_repository_ids and visibility != SecretVisibility.SELECTED:
+            raise ValueError(
+                "`selected_repository_ids` can only be provided when `visibility` is 'selected'."
+            )
+        json: dict[str, Any] = {
+            "encrypted_value": _encrypt_secret(public_key["key"], value),
+            "key_id": public_key["key_id"],
+            "visibility": visibility,
+        }
+        if selected_repository_ids:
+            json["selected_repository_ids"] = list(selected_repository_ids)
+        return self._put(
+            url=f"{self._url_secrets}/{name}",
+            json=json,
+        )

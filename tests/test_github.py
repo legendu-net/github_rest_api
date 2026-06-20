@@ -1,7 +1,17 @@
 import os
-from github_rest_api.github import User, Organization, Repository
+from base64 import b64decode
+from nacl import encoding, public
+from github_rest_api.github import User, Organization, Repository, _encrypt_secret
 
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+
+def test_encrypt_secret_roundtrip():
+    private_key = public.PrivateKey.generate()
+    public_key = private_key.public_key.encode(encoding.Base64Encoder).decode()
+    encrypted = _encrypt_secret(public_key, "s3cret-value")
+    decrypted = public.SealedBox(private_key).decrypt(b64decode(encrypted))
+    assert decrypted == b"s3cret-value"
 
 
 def test_user_get_repositories():
