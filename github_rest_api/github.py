@@ -200,8 +200,6 @@ class Repository(GitHub):
         For more details, please refer to
         https://docs.github.com/en/rest/releases/releases#create-a-release.
         """
-        if not isinstance(json, dict):
-            raise ValueError("A dict value is required for `json`.")
         return self._post(
             url=self._url_releases,
             json=json,
@@ -238,8 +236,6 @@ class Repository(GitHub):
         about the pull request to be created.
         It's passed to the json parameter of requests.post.
         """
-        if not isinstance(json, dict):
-            raise ValueError("A dict value is required for `json`.")
         if not ("head" in json and "base" in json):
             raise ValueError("The data dict must contains keys head and base!")
         # return an existing PR
@@ -262,8 +258,6 @@ class Repository(GitHub):
         """Merge a pull request in this repository.
         :param pr_number: The number of the pull quest to be merged.
         """
-        if not isinstance(pr_number, int):
-            raise ValueError("An integer value is required for `pr_number`.")
         return self._put(
             url=f"{self._url_pull}/{pr_number}/merge",
         ).json()
@@ -273,10 +267,6 @@ class Repository(GitHub):
         :param update: The branch to update.
         :param upstream: The upstream branch.
         """
-        if not isinstance(update, str):
-            raise ValueError("A string value is required for `update`.")
-        if not isinstance(upstream, str):
-            raise ValueError("A string value is required for `upstream`.")
         pr = self.create_pull_request(
             {
                 "base": update,
@@ -295,8 +285,6 @@ class Repository(GitHub):
 
         :param pr_number: The number of the pull request.
         """
-        if not isinstance(pr_number, int):
-            raise ValueError("An integer value is required for `pr_number`.")
         return self._extract_all(url=f"{self._url_pull}/{pr_number}/files", n=n)
 
     def get_branches(self, n: int = 0) -> list[dict[str, Any]]:
@@ -317,8 +305,6 @@ class Repository(GitHub):
         """Delete a reference from this repository.
         :param ref: The reference to delete from this repository.
         """
-        if not isinstance(ref, str):
-            raise ValueError("A string value is required for `ref`.")
         return self._delete(
             url=f"{self._url_refs}/{ref}",
         )
@@ -333,8 +319,6 @@ class Repository(GitHub):
         """Delete a secret from this repository.
         :param name: The name of the secret to delete.
         """
-        if not isinstance(name, str):
-            raise ValueError("A string value is required for `name`.")
         return self._delete(
             url=f"{self._url_secrets}/{name}",
         )
@@ -353,10 +337,6 @@ class Repository(GitHub):
             to encrypt the secret with. Fetch it once and reuse it to avoid a
             redundant request when creating or updating multiple secrets.
         """
-        if not isinstance(name, str):
-            raise ValueError("A string value is required for `name`.")
-        if not isinstance(value, str):
-            raise ValueError("A string value is required for `value`.")
         return self._put(
             url=f"{self._url_secrets}/{name}",
             json={
@@ -394,10 +374,6 @@ class Repository(GitHub):
         :param issue_number: The number of the issue.
         :param body: Body text of the new comment.
         """
-        if not isinstance(issue_number, int):
-            raise ValueError("An integer value is required for `issue_number`.")
-        if not isinstance(body, str):
-            raise ValueError("A string message is required for `body`.")
         return self._post(
             url=f"{self._url_issues}/{issue_number}/comments",
             json={"body": body},
@@ -522,8 +498,6 @@ class Organization(Owner):
         """Delete an organization secret.
         :param name: The name of the secret to delete.
         """
-        if not isinstance(name, str):
-            raise ValueError("A string value is required for `name`.")
         return self._delete(
             url=f"{self._url_secrets}/{name}",
         )
@@ -551,10 +525,6 @@ class Organization(Owner):
         :param selected_repository_ids: Repository IDs that can access the secret
             when visibility is `selected`.
         """
-        if not isinstance(name, str):
-            raise ValueError("A string value is required for `name`.")
-        if not isinstance(value, str):
-            raise ValueError("A string value is required for `value`.")
         if selected_repository_ids and visibility != SecretVisibility.SELECTED:
             raise ValueError(
                 "`selected_repository_ids` can only be provided when `visibility` is 'selected'."
