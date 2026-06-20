@@ -82,7 +82,7 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
-    def _put(self, url, raise_for_status: bool = True, **kwargs) -> requests.Response:
+    def _put(self, url: str, raise_for_status: bool = True, **kwargs) -> requests.Response:
         resp = requests.put(
             url=url,
             headers=self._headers,
