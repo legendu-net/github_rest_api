@@ -51,6 +51,12 @@ class GitHub:
     def _get(
         self, url: str, raise_for_status: bool = True, **kwargs
     ) -> requests.Response:
+        """Send a GET request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `params`) forwarded
+            to `requests.get`.
+        """
         resp = requests.get(
             url=url,
             headers=self._headers,
@@ -64,6 +70,13 @@ class GitHub:
     def _post(
         self, url: str, headers=None, raise_for_status: bool = True, **kwargs
     ) -> requests.Response:
+        """Send a POST request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param headers: Request headers; defaults to the standard auth headers.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.post`.
+        """
         if headers is None:
             headers = self._headers
         resp = requests.post(
@@ -82,7 +95,15 @@ class GitHub:
             resp.raise_for_status()
         return resp
 
-    def _put(self, url: str, raise_for_status: bool = True, **kwargs) -> requests.Response:
+    def _put(
+        self, url: str, raise_for_status: bool = True, **kwargs
+    ) -> requests.Response:
+        """Send a PUT request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.put`.
+        """
         resp = requests.put(
             url=url,
             headers=self._headers,
@@ -94,6 +115,12 @@ class GitHub:
         return resp
 
     def _patch(self, url, raise_for_status: bool = True, **kwargs) -> requests.Response:
+        """Send a PATCH request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.patch`.
+        """
         resp = requests.patch(
             url=url,
             headers=self._headers,
@@ -316,21 +343,25 @@ class Repository(GitHub):
         """Get the public key for encrypting secrets in this repository."""
         return self._get(url=f"{self._url_secrets}/public-key").json()
 
-    def create_or_update_secret(self, name: str, value: str) -> requests.Response:
+    def create_or_update_secret(
+        self, name: str, value: str, public_key: dict[str, Any]
+    ) -> requests.Response:
         """Create or update a secret in this repository.
         :param name: The name of the secret.
         :param value: The plaintext value of the secret.
+        :param public_key: A public key (as returned by `get_secret_public_key`)
+            to encrypt the secret with. Fetch it once and reuse it to avoid a
+            redundant request when creating or updating multiple secrets.
         """
         if not isinstance(name, str):
             raise ValueError("A string value is required for `name`.")
         if not isinstance(value, str):
             raise ValueError("A string value is required for `value`.")
-        key = self.get_secret_public_key()
         return self._put(
             url=f"{self._url_secrets}/{name}",
             json={
-                "encrypted_value": _encrypt_secret(key["key"], value),
-                "key_id": key["key_id"],
+                "encrypted_value": _encrypt_secret(public_key["key"], value),
+                "key_id": public_key["key_id"],
             },
         )
 
@@ -394,6 +425,12 @@ class RepositoryType(StrEnum):
     PRIVATE = "private"
 
 
+class SecretVisibility(StrEnum):
+    ALL = "all"
+    PRIVATE = "private"
+    SELECTED = "selected"
+
+
 class Owner(GitHub, metaclass=ABCMeta):
     """An abstract owner class representing an organization or user."""
 
@@ -427,6 +464,14 @@ class Owner(GitHub, metaclass=ABCMeta):
     def create_repository(
         self, name: str, description: str = "", private: bool = True, **kwargs
     ) -> dict[str, Any]:
+        """Create a repository for this owner.
+        :param name: The name of the repository.
+        :param description: A short description of the repository.
+        :param private: Whether the repository is private.
+        :param kwargs: Additional keyword arguments forwarded to `_post`
+            (e.g. `params` or `raise_for_status`). Note `json` is already set
+            from the other parameters and must not be passed here.
+        """
         data = {
             "name": name,
             "description": description,
@@ -491,12 +536,16 @@ class Organization(Owner):
         self,
         name: str,
         value: str,
-        visibility: str = "all",
+        public_key: dict[str, Any],
+        visibility: SecretVisibility = SecretVisibility.ALL,
         selected_repository_ids: Sequence[int] = (),
     ) -> requests.Response:
         """Create or update an organization secret.
         :param name: The name of the secret.
         :param value: The plaintext value of the secret.
+        :param public_key: A public key (as returned by `get_secret_public_key`)
+            to encrypt the secret with. Fetch it once and reuse it to avoid a
+            redundant request when creating or updating multiple secrets.
         :param visibility: Which repositories can access the secret
             (all, private, or selected).
         :param selected_repository_ids: Repository IDs that can access the secret
@@ -506,10 +555,13 @@ class Organization(Owner):
             raise ValueError("A string value is required for `name`.")
         if not isinstance(value, str):
             raise ValueError("A string value is required for `value`.")
-        key = self.get_secret_public_key()
+        if selected_repository_ids and visibility != SecretVisibility.SELECTED:
+            raise ValueError(
+                "`selected_repository_ids` can only be provided when `visibility` is 'selected'."
+            )
         json: dict[str, Any] = {
-            "encrypted_value": _encrypt_secret(key["key"], value),
-            "key_id": key["key_id"],
+            "encrypted_value": _encrypt_secret(public_key["key"], value),
+            "key_id": public_key["key_id"],
             "visibility": visibility,
         }
         if selected_repository_ids:
