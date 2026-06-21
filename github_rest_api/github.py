@@ -132,8 +132,19 @@ class GitHub:
         return resp
 
     def _extract_all(
-        self, url: str, params: dict[str, Any] | None = None, n: int = 0
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        n: int = 0,
+        key: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Collect all paginated items from a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param params: Query parameters forwarded to each request.
+        :param n: The maximum number of items to return (0 means all).
+        :param key: The key under which the list is nested in the response.
+            Defaults to None for endpoints that return a plain JSON array.
+        """
         params = params.copy() if params else {}
         if "per_page" not in params:
             params["per_page"] = min(100, n) if n > 0 else 100
@@ -143,10 +154,11 @@ class GitHub:
             resp = self._get(url=url, params=params.copy())
             resp.raise_for_status()
             data = resp.json()
-            res.extend(data)
+            items = data if key is None else data[key]
+            res.extend(items)
             if n and len(res) >= n:
                 return res[:n]
-            if len(data) < params["per_page"]:
+            if len(items) < params["per_page"]:
                 return res
             params["page"] += 1
 
@@ -315,6 +327,10 @@ class Repository(GitHub):
         """
         return self.delete_ref(ref=f"heads/{branch}")
 
+    def get_secrets(self, n: int = 0) -> list[dict[str, Any]]:
+        """List secrets in this repository."""
+        return self._extract_all(url=self._url_secrets, n=n, key="secrets")
+
     def delete_secret(self, name: str) -> requests.Response:
         """Delete a secret from this repository.
         :param name: The name of the secret to delete.
@@ -328,15 +344,18 @@ class Repository(GitHub):
         return self._get(url=f"{self._url_secrets}/public-key").json()
 
     def create_or_update_secret(
-        self, name: str, value: str, public_key: dict[str, Any]
+        self, name: str, value: str, public_key: dict[str, Any] | None = None
     ) -> requests.Response:
         """Create or update a secret in this repository.
         :param name: The name of the secret.
         :param value: The plaintext value of the secret.
         :param public_key: A public key (as returned by `get_secret_public_key`)
-            to encrypt the secret with. Fetch it once and reuse it to avoid a
-            redundant request when creating or updating multiple secrets.
+            to encrypt the secret with. If not provided, it is fetched
+            automatically. Fetch it once and reuse it to avoid a redundant
+            request when creating or updating multiple secrets.
         """
+        if public_key is None:
+            public_key = self.get_secret_public_key()
         return self._put(
             url=f"{self._url_secrets}/{name}",
             json={
@@ -494,6 +513,10 @@ class Organization(Owner):
         self._url_create_repo = self._url_repos
         self._url_secrets = f"{self._url_owner}/actions/secrets"
 
+    def get_secrets(self, n: int = 0) -> list[dict[str, Any]]:
+        """List secrets in this organization."""
+        return self._extract_all(url=self._url_secrets, n=n, key="secrets")
+
     def delete_secret(self, name: str) -> requests.Response:
         """Delete an organization secret.
         :param name: The name of the secret to delete.
@@ -510,7 +533,7 @@ class Organization(Owner):
         self,
         name: str,
         value: str,
-        public_key: dict[str, Any],
+        public_key: dict[str, Any] | None = None,
         visibility: SecretVisibility = SecretVisibility.ALL,
         selected_repository_ids: Sequence[int] = (),
     ) -> requests.Response:
@@ -518,8 +541,9 @@ class Organization(Owner):
         :param name: The name of the secret.
         :param value: The plaintext value of the secret.
         :param public_key: A public key (as returned by `get_secret_public_key`)
-            to encrypt the secret with. Fetch it once and reuse it to avoid a
-            redundant request when creating or updating multiple secrets.
+            to encrypt the secret with. If not provided, it is fetched
+            automatically. Fetch it once and reuse it to avoid a redundant
+            request when creating or updating multiple secrets.
         :param visibility: Which repositories can access the secret
             (all, private, or selected).
         :param selected_repository_ids: Repository IDs that can access the secret
@@ -529,6 +553,8 @@ class Organization(Owner):
             raise ValueError(
                 "`selected_repository_ids` can only be provided when `visibility` is 'selected'."
             )
+        if public_key is None:
+            public_key = self.get_secret_public_key()
         json: dict[str, Any] = {
             "encrypted_value": _encrypt_secret(public_key["key"], value),
             "key_id": public_key["key_id"],
