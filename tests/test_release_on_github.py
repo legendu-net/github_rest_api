@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
+
 from github_rest_api.scripts.github.release_on_github import _get_release_tag
 
 ROOT = Path(".")

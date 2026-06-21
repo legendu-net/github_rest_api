@@ -1,9 +1,10 @@
+import argparse
+import getpass
 import os
 import re
 import sys
-import argparse
-import getpass
 from pathlib import Path
+
 from github_rest_api import Repository
 from github_rest_api.scripts.utils import (
     find_project_root,

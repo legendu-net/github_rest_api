@@ -1,14 +1,16 @@
 """Utils for profiling Rust applications."""
 
-from typing import Iterable
-from pathlib import Path
-import time
 import datetime
 import subprocess as sp
+import time
+from pathlib import Path
+from typing import Iterable
+
 import psutil
-from .utils import build_project
-from ..utils import config_git, switch_branch, push_branch, commit_profiling
+
 from ...utils import partition
+from ..utils import commit_profiling, config_git, push_branch, switch_branch
+from .utils import build_project
 
 
 def launch_application(cmd: list[str]) -> int:

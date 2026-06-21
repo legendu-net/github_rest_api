@@ -7,9 +7,10 @@ import shutil
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+
 from dulwich import porcelain
 
-from github_rest_api import User, Organization
+from github_rest_api import Organization, User
 
 
 def _validate_repo(repo: str) -> None:

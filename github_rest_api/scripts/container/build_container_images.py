@@ -1,16 +1,17 @@
 import argparse
-from collections.abc import Sequence
 import datetime
-from pathlib import Path
 import subprocess as sp
 import sys
+from collections.abc import Sequence
+from pathlib import Path
 from typing import cast
+
 import yaml
-from dulwich.repo import Repo
-from dulwich.refs import Ref
-from dulwich.objects import Commit
-from dulwich.errors import NotGitRepository
 from dulwich.diff_tree import tree_changes
+from dulwich.errors import NotGitRepository
+from dulwich.objects import Commit
+from dulwich.refs import Ref
+from dulwich.repo import Repo
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 

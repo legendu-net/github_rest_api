@@ -1,18 +1,20 @@
 """Benchmark action using cargo criterion."""
 
-from typing import Callable
-import tempfile
-from pathlib import Path
 import datetime
 import shutil
 import subprocess as sp
+import tempfile
+from pathlib import Path
+from typing import Callable
+
 from dulwich import porcelain
+
 from ..utils import (
-    config_git,
-    switch_branch,
-    push_branch,
-    gen_temp_branch,
     commit_benchmarks,
+    config_git,
+    gen_temp_branch,
+    push_branch,
+    switch_branch,
 )
 
 

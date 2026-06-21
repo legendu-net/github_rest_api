@@ -1,4 +1,5 @@
 import pytest
+
 from github_rest_api.utils import next_minor_or_strip_patch, strip_patch_version
 
 

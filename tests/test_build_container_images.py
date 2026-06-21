@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import patch
+
 from github_rest_api.scripts.container.build_container_images import (
     has_relevant_changes,
 )
