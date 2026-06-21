@@ -1,15 +1,44 @@
 """Simple wrapper of GitHub REST APIs."""
 
+import re
 from abc import ABCMeta, abstractmethod
 from base64 import b64encode
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import Any, Callable
 from pathlib import Path
+from typing import Any, Callable
+
 import requests
 from nacl import encoding, public
 
 URL_API = "https://api.github.com"
+
+_SECRET_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_secret_name(name: str) -> None:
+    """Validate a secret name against GitHub's naming rules.
+
+    GitHub rejects invalid secret names with a 422 response. Validating the
+    name client-side surfaces a clear error before the request is sent.
+
+    :param name: The name of the secret.
+    :raises ValueError: If the name is empty, starts with the reserved
+        ``GITHUB_`` prefix, starts with a digit, or contains characters other
+        than alphanumerics and underscores.
+    """
+    if not name:
+        raise ValueError("A secret name must not be empty.")
+    if name.upper().startswith("GITHUB_"):
+        raise ValueError(
+            f"Invalid secret name {name!r}: names must not start with the "
+            "reserved 'GITHUB_' prefix."
+        )
+    if not _SECRET_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            f"Invalid secret name {name!r}: names may only contain alphanumeric "
+            "characters and underscores, and must not start with a digit."
+        )
 
 
 def _encrypt_secret(public_key: str, value: str) -> str:
@@ -354,6 +383,7 @@ class Repository(GitHub):
             automatically. Fetch it once and reuse it to avoid a redundant
             request when creating or updating multiple secrets.
         """
+        _validate_secret_name(name)
         if public_key is None:
             public_key = self.get_secret_public_key()
         return self._put(
@@ -549,6 +579,7 @@ class Organization(Owner):
         :param selected_repository_ids: Repository IDs that can access the secret
             when visibility is `selected`.
         """
+        _validate_secret_name(name)
         if selected_repository_ids and visibility != SecretVisibility.SELECTED:
             raise ValueError(
                 "`selected_repository_ids` can only be provided when `visibility` is 'selected'."

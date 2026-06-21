@@ -1,7 +1,8 @@
 import argparse
+import datetime
 import re
 import sys
-import datetime
+
 from github_rest_api import Repository
 
 

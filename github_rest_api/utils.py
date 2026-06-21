@@ -1,8 +1,8 @@
 """Some generally useful util functions."""
 
-from collections.abc import Sequence
-from itertools import tee, filterfalse
 import re
+from collections.abc import Sequence
+from itertools import filterfalse, tee
 
 
 def partition(pred, iterable):

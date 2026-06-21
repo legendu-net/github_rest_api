@@ -2,9 +2,10 @@
 The branch is updated (using dev) before creating the PR.
 """
 
-from argparse import ArgumentParser, Namespace
 import os
 import sys
+from argparse import ArgumentParser, Namespace
+
 from github_rest_api import Repository
 from github_rest_api.utils import compile_patterns
 

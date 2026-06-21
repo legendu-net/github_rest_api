@@ -1,13 +1,15 @@
 import argparse
 import datetime
 import os
+import re
 import sys
 from pathlib import Path
-import re
+
 from dulwich import porcelain
+from requests.exceptions import HTTPError
+
 from github_rest_api import Repository
 from github_rest_api.utils import next_minor_or_strip_patch
-from requests.exceptions import HTTPError
 
 
 def parse_latest_version(repo: str) -> str:

@@ -1,10 +1,11 @@
 """Util functions for GitHub actions."""
 
-import tomllib
-from typing import Any, Iterable
-from pathlib import Path
-from collections.abc import Sequence
 import random
+import tomllib
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, Iterable
+
 from dulwich import porcelain
 from dulwich.repo import Repo
 
