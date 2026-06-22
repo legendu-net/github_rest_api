@@ -24,6 +24,9 @@ dependencies = [
   "tenacity>=9.1.4",
   "tomli-w>=1",
 ]
+optional-dependencies.ai = [
+  "litellm>=1.50",
+]
 scripts.add_github_repo = "github_rest_api.scripts.github.add_github_repo:main"
 scripts.build_container_images = "github_rest_api.scripts.container.build_container_images:main"
 scripts.config_container = "github_rest_api.scripts.container.config_container:main"
@@ -42,7 +45,6 @@ dev = [
   "ty>=0.0.8",
 ]
 
-[tool.ruff.lint]
+[tool.ruff]
 # select the 'I' rule set for import sorting
-extend-select = ["I"]
-
+lint.extend-select = [ "I" ]
