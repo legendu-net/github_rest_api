@@ -15,4 +15,4 @@ jobs:
           uvx --from github-rest-api@latest remove_branch \
             --repo ${{ github.repository }} \
             --pattern '^(?!main$)' \
-            --token ${{ secrets.GITHUBACTIONS }}
+            --token ${{ secrets.ACTIONS_TOKEN }}
