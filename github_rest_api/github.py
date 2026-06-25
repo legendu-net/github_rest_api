@@ -1,5 +1,6 @@
 """Simple wrapper of GitHub REST APIs."""
 
+import logging
 import re
 from abc import ABCMeta, abstractmethod
 from base64 import b64encode
@@ -7,13 +8,23 @@ from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 
 import requests
 from nacl import encoding, public
 
+from github_rest_api.pr_content import (
+    deterministic_body,
+    deterministic_title,
+    generate_pr_content,
+)
+
+logger = logging.getLogger(__name__)
+
 URL_API = "https://api.github.com"
 
-_SECRET_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Default LiteLLM 'provider/model' used to generate PR titles and descriptions.
+DEFAULT_PR_MODEL = "anthropic/claude-haiku-4-5-20251001"
 
 
 def _validate_secret_name(name: str) -> None:
@@ -34,7 +45,7 @@ def _validate_secret_name(name: str) -> None:
             f"Invalid secret name {name!r}: names must not start with the "
             "reserved 'GITHUB_' prefix."
         )
-    if not _SECRET_NAME_PATTERN.fullmatch(name):
+    if not re.fullmatch(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
         raise ValueError(
             f"Invalid secret name {name!r}: names may only contain alphanumeric "
             "characters and underscores, and must not start with a digit."
@@ -211,6 +222,7 @@ class Repository(GitHub):
         self._url_issues = f"{self._url_repo}/issues"
         self._url_releases = f"{self._url_repo}/releases"
         self._url_secrets = f"{self._url_repo}/actions/secrets"
+        self._url_compare = f"{self._url_repo}/compare"
 
     def get_releases(self, n: int = 0) -> list[dict[str, Any]]:
         """List releases in this repository."""
@@ -270,21 +282,73 @@ class Repository(GitHub):
         """List pull requests in this repository."""
         return self._extract_all(url=self._url_pull, n=n)
 
-    def create_pull_request(self, json: dict[str, str]) -> dict[str, Any] | None:
+    def _generate_pull_request_content(
+        self, base: str, head: str, model: str
+    ) -> tuple[str, str] | None:
+        """Generate a `(title, body)` for a new PR from the head/base comparison.
+
+        Returns None when there is nothing to describe (an empty comparison), so
+        the caller keeps the provided title.
+
+        :param base: The base branch the PR merges into.
+        :param head: The head branch containing the changes.
+        :param model: The LiteLLM 'provider/model' string for LLM generation.
+            When empty, the title and body are generated deterministically from
+            the commit messages and changed files; otherwise an LLM is used,
+            falling back to deterministic generation on failure.
+        """
+        compare = self.compare(base=base, head=head)
+        if not compare.get("commits"):
+            return None
+        if model:
+            try:
+                return generate_pr_content(compare, model=model)
+            except Exception as error:
+                logger.warning(
+                    "LLM PR generation failed (%s); "
+                    "falling back to deterministic content.",
+                    error,
+                    exc_info=True,
+                )
+        return deterministic_title(compare), deterministic_body(compare)
+
+    def create_pull_request(
+        self,
+        json: dict[str, str],
+        model: str = "",
+    ) -> dict[str, Any] | None:
         """Create a pull request.
+
+        A Conventional-Commits title and a detailed Markdown body are generated
+        for a newly created PR. A caller-provided 'title' or 'body' in `json`
+        takes precedence; only the missing field(s) are generated. To skip
+        generation entirely, provide both 'title' and 'body' in `json`.
 
         :param json: A dict containing info (e.g., base, head, title, body, etc.)
         about the pull request to be created.
         It's passed to the json parameter of requests.post.
+        :param model: The LiteLLM 'provider/model' string. When empty (the
+            default), missing title/body are generated deterministically from
+            the commit messages and changed files. When non-empty, an LLM is
+            used (with the optional 'ai' extra installed and the matching
+            provider API key read from the environment), falling back to
+            deterministic generation on failure.
         """
         if not ("head" in json and "base" in json):
             raise ValueError("The data dict must contains keys head and base!")
         # return an existing PR
-        prs = self.get_pull_requests()
-        for pr in prs:
+        for pr in self.get_pull_requests():
             if pr["head"]["ref"] == json["head"] and pr["base"]["ref"] == json["base"]:
                 return pr
-        # creat a new PR
+        # generate any title/body not already provided by the caller
+        if "title" not in json or "body" not in json:
+            content = self._generate_pull_request_content(
+                base=json["base"], head=json["head"], model=model
+            )
+            if content is not None:
+                # caller-provided title/body take precedence over generated ones
+                json = {"title": content[0], "body": content[1], **json}
+        # create a new PR
         resp = self._post(
             url=self._url_pull,
             json=json,
@@ -308,11 +372,14 @@ class Repository(GitHub):
         :param update: The branch to update.
         :param upstream: The upstream branch.
         """
+        # Provide a title and an (empty) body so no description is generated for
+        # this mechanical, immediately merged update PR.
         pr = self.create_pull_request(
             {
                 "base": update,
                 "head": upstream,
                 "title": f"Merge {upstream} into {update}",
+                "body": "",
             },
         )
         if pr is None:
@@ -327,6 +394,21 @@ class Repository(GitHub):
         :param pr_number: The number of the pull request.
         """
         return self._extract_all(url=f"{self._url_pull}/{pr_number}/files", n=n)
+
+    def compare(self, base: str, head: str) -> dict[str, Any]:
+        """Compare two commits/branches in this repository.
+
+        :param base: The base branch (or commit) of the comparison.
+        :param head: The head branch (or commit) of the comparison.
+        :return: The comparison result containing `commits` and `files`
+            (each file with `filename`, `status`, `additions`, `deletions`,
+            and `patch`). See
+            https://docs.github.com/en/rest/commits/commits#compare-two-commits.
+        """
+        # Branch names may contain slashes, so each ref is URL-encoded while the
+        # literal `...` separator between them is preserved.
+        basehead = f"{quote(base, safe='')}...{quote(head, safe='')}"
+        return self._get(url=f"{self._url_compare}/{basehead}").json()
 
     def get_branches(self, n: int = 0) -> list[dict[str, Any]]:
         """List branches in this repository."""
