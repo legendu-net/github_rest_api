@@ -203,6 +203,12 @@ class GitHub:
             params["page"] += 1
 
 
+class IssueState(StrEnum):
+    OPEN = "open"
+    CLOSED = "closed"
+    ALL = "all"
+
+
 class Repository(GitHub):
     """Abstraction of a GitHub repository."""
 
@@ -281,6 +287,19 @@ class Repository(GitHub):
     def get_pull_requests(self, n: int = 0) -> list[dict[str, Any]]:
         """List pull requests in this repository."""
         return self._extract_all(url=self._url_pull, n=n)
+
+    def get_issues(
+        self, state: IssueState = IssueState.OPEN, n: int = 0
+    ) -> list[dict[str, Any]]:
+        """List issues in this repository.
+
+        :param state: Filter issues by state: ``open`` (the default),
+            ``closed``, or ``all``. Note that GitHub's issues endpoint also
+            returns pull requests; each pull request carries a
+            ``pull_request`` key.
+        :param n: The maximum number of issues to return (0 means all).
+        """
+        return self._extract_all(url=self._url_issues, params={"state": state}, n=n)
 
     def _generate_pull_request_content(
         self, base: str, head: str, model: str
@@ -498,6 +517,14 @@ class Repository(GitHub):
         :param pred: A customized boolean predictor checking Rust-related changes.
         """
         return self.pr_has_change(pr_number=pr_number, pred=pred)
+
+    def get_issue_comments(self, issue_number: int, n: int = 0) -> list[dict[str, Any]]:
+        """List comments on an issue in this repository.
+
+        :param issue_number: The number of the issue.
+        :param n: The maximum number of comments to return (0 means all).
+        """
+        return self._extract_all(url=f"{self._url_issues}/{issue_number}/comments", n=n)
 
     def create_issue_comment(self, issue_number: int, body: str) -> dict[str, Any]:
         """Add a new comment to an issue.
