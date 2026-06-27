@@ -76,6 +76,25 @@ def test_repository_get_branch():
     assert branch["name"] == "main"
 
 
+def test_get_issues_passes_url_and_state():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_extract_all", return_value=[]) as mock_extract:
+        repo.get_issues()
+    assert mock_extract.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues"
+    )
+    assert mock_extract.call_args.kwargs["params"] == {"state": "open"}
+
+
+def test_get_issue_comments_passes_url():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_extract_all", return_value=[]) as mock_extract:
+        repo.get_issue_comments(7)
+    assert mock_extract.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/comments"
+    )
+
+
 def test_compare_url_encodes_branch_names():
     repo = Repository("token", "owner/name")
     response = MagicMock()
