@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TypeGuard
 from urllib.parse import quote
 
 import requests
@@ -108,6 +108,32 @@ def _login(obj: dict[str, Any]) -> str | None:
     return (obj.get("user") or {}).get("login")
 
 
+def _normalized_logins(logins: Sequence[str]) -> set[str]:
+    """Lower-case GitHub logins into a set for case-insensitive membership tests.
+
+    GitHub logins are case-insensitive, so normalizing the allowlist once (rather
+    than per candidate) lets repeated membership tests compare against a stable
+    lower-cased set.
+
+    :param logins: The logins eligible for a gated action.
+    """
+    return {login.lower() for login in logins}
+
+
+def _in_allowlist(login: str | None, allowlist: set[str]) -> TypeGuard[str]:
+    """Check whether a GitHub login is in a normalized allowlist.
+
+    ``allowlist`` must already be lower-cased (see :func:`_normalized_logins`).
+    The login is lower-cased here before comparison, so casing differences
+    between the configured allowlist and the API response do not cause spurious
+    mismatches. A ``None`` login (e.g. a ghost/deleted account) is never a member.
+
+    :param login: The login to test, or None.
+    :param allowlist: A lower-cased set of logins eligible for the gated action.
+    """
+    return login is not None and login.lower() in allowlist
+
+
 # Matches the leading Conventional-Commits type token of a title, e.g. the
 # `chore` in "chore(deps): bump x" or "feat!: ...".
 _CONVENTIONAL_TYPE = re.compile(r"^(\w+)(\([^)]*\))?!?:")
@@ -149,7 +175,7 @@ def _field_gate_failure(
     """
     if pr.get("draft"):
         return "it is a draft"
-    if _login(pr) not in set(authors):
+    if not _in_allowlist(_login(pr), _normalized_logins(authors)):
         return "its author is not in the allowlist"
     if not _title_type_allowed(pr.get("title") or "", allowed_types):
         return "its title type is not auto-merge eligible"
@@ -174,14 +200,14 @@ def _approver_review_states(
     :param reviews: Reviews as returned by ``get_pull_request_reviews``.
     :param approvers: Logins whose reviews are trusted for auto-merge.
     """
-    approver_set = set(approvers)
+    approver_set = _normalized_logins(approvers)
     # Reviews are returned in chronological order, so a later decisive entry
     # overrides an earlier one for the same reviewer.
     latest: dict[str, str] = {}
     for review in reviews:
         login = _login(review)
         state = review.get("state")
-        if login in approver_set and state in (
+        if _in_allowlist(login, approver_set) and state in (
             "APPROVED",
             "CHANGES_REQUESTED",
             "DISMISSED",
@@ -199,9 +225,10 @@ def _marker_approved(
     :param approvers: Logins whose marker comments are trusted for auto-merge.
     :param marker: The marker substring signalling approval.
     """
-    approver_set = set(approvers)
+    approver_set = _normalized_logins(approvers)
     return any(
-        _login(comment) in approver_set and marker in (comment.get("body") or "")
+        _in_allowlist(_login(comment), approver_set)
+        and marker in (comment.get("body") or "")
         for comment in comments
     )
 
@@ -212,7 +239,7 @@ def _old_enough(commit_iso: str, min_age_minutes: int) -> bool:
     :param commit_iso: An ISO-8601 UTC timestamp (e.g. ``2026-06-27T12:00:00Z``).
     :param min_age_minutes: The minimum age in minutes.
     """
-    committed = datetime.fromisoformat(commit_iso.replace("Z", "+00:00"))
+    committed = datetime.fromisoformat(commit_iso)
     return datetime.now(timezone.utc) - committed >= timedelta(minutes=min_age_minutes)
 
 
@@ -731,9 +758,11 @@ class Repository(GitHub):
                     # Pin the merge to the SHA the gate validated so a push that
                     # landed in between is rejected (409) instead of merged.
                     self.merge_pull_request(number, merge_method, sha=sha)
-            except requests.HTTPError:
+            except Exception:
                 logger.warning(
-                    "Skipping PR #%s after a request failure.", number, exc_info=True
+                    "Skipping PR #%s after an unexpected failure.",
+                    number,
+                    exc_info=True,
                 )
                 continue
             eligible.append(number)

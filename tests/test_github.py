@@ -536,6 +536,54 @@ def test_should_auto_merge_changes_requested_vetoes_marker_comment():
     assert _run_should_auto_merge(repo, patches) is None
 
 
+def test_settle_mergeable_state_retries_until_settled():
+    # GitHub returns "unknown" until it finishes computing mergeable_state; the
+    # PR is re-fetched (sleeping between tries) until the state settles.
+    repo = Repository("token", "owner/name")
+    pr = {"number": 1, "mergeable_state": "unknown"}
+    fetched = [
+        {"number": 1, "mergeable_state": "unknown"},
+        {"number": 1, "mergeable_state": "clean"},
+    ]
+    with (
+        patch("github_rest_api.github.time.sleep") as mock_sleep,
+        patch.object(repo, "get_pull_request", side_effect=fetched) as mock_get,
+    ):
+        settled = repo._settle_mergeable_state(pr)
+    assert settled["mergeable_state"] == "clean"
+    assert mock_get.call_count == 2
+    assert mock_sleep.call_count == 2
+
+
+def test_settle_mergeable_state_returns_immediately_when_settled():
+    # An already-settled state needs no re-fetch and no sleep.
+    repo = Repository("token", "owner/name")
+    pr = {"number": 1, "mergeable_state": "clean"}
+    with (
+        patch("github_rest_api.github.time.sleep") as mock_sleep,
+        patch.object(repo, "get_pull_request") as mock_get,
+    ):
+        settled = repo._settle_mergeable_state(pr)
+    assert settled is pr
+    mock_get.assert_not_called()
+    mock_sleep.assert_not_called()
+
+
+def test_settle_mergeable_state_gives_up_after_attempts():
+    # When the state never settles, it gives up after ``attempts`` fetches and
+    # returns the last (still-unknown) PR rather than looping forever.
+    repo = Repository("token", "owner/name")
+    pr = {"number": 1, "mergeable_state": "unknown"}
+    with (
+        patch("github_rest_api.github.time.sleep") as mock_sleep,
+        patch.object(repo, "get_pull_request", return_value=dict(pr)) as mock_get,
+    ):
+        settled = repo._settle_mergeable_state(pr, attempts=3)
+    assert settled["mergeable_state"] == "unknown"
+    assert mock_get.call_count == 3
+    assert mock_sleep.call_count == 3
+
+
 def _pr_item(number):
     """A list-endpoint PR payload that passes the field-only pre-filter gate."""
     return {
