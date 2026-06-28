@@ -2,9 +2,11 @@
 
 import logging
 import re
+import time
 from abc import ABCMeta, abstractmethod
 from base64 import b64encode
 from collections.abc import Sequence
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Callable
@@ -25,6 +27,18 @@ URL_API = "https://api.github.com"
 
 # Default LiteLLM 'provider/model' used to generate PR titles and descriptions.
 DEFAULT_PR_MODEL = "anthropic/claude-haiku-4-5-20251001"
+
+# Defaults for automatic pull request merging (see Repository.auto_merge_pull_requests).
+# A marker comment from an allowlisted approver is accepted as an approval signal
+# for AI reviewers that only comment instead of submitting a formal review.
+DEFAULT_AUTO_MERGE_MARKER = "<!-- auto-merge: approved -->"
+# Conventional-commit title types eligible for auto-merge.
+DEFAULT_AUTO_MERGE_TYPES = ("chore", "docs", "deps")
+# A PR is only auto-merged once its head commit is at least this old, an anti-race
+# guard so a PR that momentarily reads `clean` before CI registers is not merged.
+# A just-created PR is simply deferred to the next run, never dropped, so a small
+# margin over the CI-registration latency suffices; set to 0 to disable the guard.
+DEFAULT_MIN_AGE_MINUTES = 2
 
 
 def _validate_secret_name(name: str) -> None:
@@ -81,6 +95,125 @@ def _is_rust(file: str) -> bool:
     if path.suffix == ".rs":
         return True
     return False
+
+
+def _login(obj: dict[str, Any]) -> str | None:
+    """Return the author login of a GitHub object (PR, review, comment), or None.
+
+    The ``user`` field can be absent or null (e.g. a ghost/deleted account), so
+    it is guarded before reading ``login``.
+
+    :param obj: A GitHub object carrying an optional ``user`` sub-object.
+    """
+    return (obj.get("user") or {}).get("login")
+
+
+# Matches the leading Conventional-Commits type token of a title, e.g. the
+# `chore` in "chore(deps): bump x" or "feat!: ...".
+_CONVENTIONAL_TYPE = re.compile(r"^(\w+)(\([^)]*\))?!?:")
+
+
+def _conventional_type(title: str) -> str | None:
+    """Extract the lower-cased Conventional-Commits type token from a PR title.
+
+    :param title: The pull request title.
+    :return: The type token (e.g. ``chore``) lower-cased, or None when the title
+        does not start with a Conventional-Commits type prefix.
+    """
+    match = _CONVENTIONAL_TYPE.match(title)
+    return match.group(1).lower() if match else None
+
+
+def _title_type_allowed(title: str, allowed_types: Sequence[str]) -> bool:
+    """Check whether a PR title's Conventional-Commits type is auto-merge eligible.
+
+    :param title: The pull request title.
+    :param allowed_types: The Conventional-Commits types eligible for auto-merge.
+    """
+    type_ = _conventional_type(title)
+    return type_ is not None and type_ in allowed_types
+
+
+def _field_gate_failure(
+    pr: dict[str, Any], authors: Sequence[str], allowed_types: Sequence[str]
+) -> str | None:
+    """Return why a PR fails the field-only auto-merge gates, or None if it passes.
+
+    These gates (not a draft, trusted author, eligible title type) read only
+    fields carried by both the list and single-PR payloads, so they can filter
+    list items before the more expensive single-PR detail is fetched.
+
+    :param pr: A PR payload (a list item or full detail).
+    :param authors: Logins whose PRs are eligible for auto-merge.
+    :param allowed_types: Conventional-Commits title types eligible for auto-merge.
+    """
+    if pr.get("draft"):
+        return "it is a draft"
+    if _login(pr) not in set(authors):
+        return "its author is not in the allowlist"
+    if not _title_type_allowed(pr.get("title") or "", allowed_types):
+        return "its title type is not auto-merge eligible"
+    return None
+
+
+def _approver_review_states(
+    reviews: Sequence[dict[str, Any]], approvers: Sequence[str]
+) -> set[str]:
+    """Return the set of latest decisive review states among allowlisted reviewers.
+
+    Only the latest decisive review per reviewer is kept. ``APPROVED``,
+    ``CHANGES_REQUESTED`` and ``DISMISSED`` are decisive (so a later
+    ``DISMISSED`` clears an earlier approval), while ``COMMENTED`` and
+    ``PENDING`` are ignored (a comment does not revoke an approval).
+
+    Returning the set (rather than a single approved/not-approved boolean) lets
+    the caller treat ``CHANGES_REQUESTED`` as a veto independently of how
+    approval is granted, so a marker comment cannot override a standing change
+    request.
+
+    :param reviews: Reviews as returned by ``get_pull_request_reviews``.
+    :param approvers: Logins whose reviews are trusted for auto-merge.
+    """
+    approver_set = set(approvers)
+    # Reviews are returned in chronological order, so a later decisive entry
+    # overrides an earlier one for the same reviewer.
+    latest: dict[str, str] = {}
+    for review in reviews:
+        login = _login(review)
+        state = review.get("state")
+        if login in approver_set and state in (
+            "APPROVED",
+            "CHANGES_REQUESTED",
+            "DISMISSED",
+        ):
+            latest[login] = state
+    return set(latest.values())
+
+
+def _marker_approved(
+    comments: Sequence[dict[str, Any]], approvers: Sequence[str], marker: str
+) -> bool:
+    """Check whether an allowlisted approver left the auto-merge marker comment.
+
+    :param comments: Issue comments as returned by ``get_issue_comments``.
+    :param approvers: Logins whose marker comments are trusted for auto-merge.
+    :param marker: The marker substring signalling approval.
+    """
+    approver_set = set(approvers)
+    return any(
+        _login(comment) in approver_set and marker in (comment.get("body") or "")
+        for comment in comments
+    )
+
+
+def _old_enough(commit_iso: str, min_age_minutes: int) -> bool:
+    """Check whether a commit timestamp is at least ``min_age_minutes`` old.
+
+    :param commit_iso: An ISO-8601 UTC timestamp (e.g. ``2026-06-27T12:00:00Z``).
+    :param min_age_minutes: The minimum age in minutes.
+    """
+    committed = datetime.fromisoformat(commit_iso.replace("Z", "+00:00"))
+    return datetime.now(timezone.utc) - committed >= timedelta(minutes=min_age_minutes)
 
 
 class GitHub:
@@ -209,6 +342,12 @@ class IssueState(StrEnum):
     ALL = "all"
 
 
+class MergeMethod(StrEnum):
+    MERGE = "merge"
+    SQUASH = "squash"
+    REBASE = "rebase"
+
+
 class Repository(GitHub):
     """Abstraction of a GitHub repository."""
 
@@ -287,6 +426,28 @@ class Repository(GitHub):
     def get_pull_requests(self, n: int = 0) -> list[dict[str, Any]]:
         """List pull requests in this repository."""
         return self._extract_all(url=self._url_pull, n=n)
+
+    def get_pull_request(self, pr_number: int) -> dict[str, Any]:
+        """Get the full detail of a single pull request.
+
+        Unlike ``get_pull_requests``, this returns fields computed per-PR such as
+        ``mergeable`` and ``mergeable_state``. These are computed asynchronously
+        by GitHub, so ``mergeable_state`` may be ``unknown`` immediately after a
+        push; callers that need it should re-fetch until it settles.
+
+        :param pr_number: The number of the pull request.
+        """
+        return self._get(url=f"{self._url_pull}/{pr_number}").json()
+
+    def get_pull_request_reviews(
+        self, pr_number: int, n: int = 0
+    ) -> list[dict[str, Any]]:
+        """List reviews on a pull request.
+
+        :param pr_number: The number of the pull request.
+        :param n: The maximum number of reviews to return (0 means all).
+        """
+        return self._extract_all(url=f"{self._url_pull}/{pr_number}/reviews", n=n)
 
     def get_issues(
         self, state: IssueState = IssueState.OPEN, n: int = 0
@@ -378,12 +539,26 @@ class Repository(GitHub):
         resp.raise_for_status()
         return resp.json()
 
-    def merge_pull_request(self, pr_number: int) -> dict[str, Any]:
+    def merge_pull_request(
+        self,
+        pr_number: int,
+        merge_method: MergeMethod | str = MergeMethod.MERGE,
+        sha: str = "",
+    ) -> dict[str, Any]:
         """Merge a pull request in this repository.
         :param pr_number: The number of the pull quest to be merged.
+        :param merge_method: The merge method to use (``merge``, ``squash`` or
+            ``rebase``). Defaults to ``merge``.
+        :param sha: When non-empty, the SHA that the PR head must still match for
+            the merge to proceed (GitHub rejects the merge with 409 if the head
+            has moved). Use it to pin a merge to a previously validated commit.
         """
+        body: dict[str, Any] = {"merge_method": str(merge_method)}
+        if sha:
+            body["sha"] = sha
         return self._put(
             url=f"{self._url_pull}/{pr_number}/merge",
+            json=body,
         ).json()
 
     def update_branch(self, update: str, upstream: str) -> dict[str, Any] | None:
@@ -404,6 +579,165 @@ class Repository(GitHub):
         if pr is None:
             return
         return self.merge_pull_request(pr["number"])
+
+    def _settle_mergeable_state(
+        self, pr: dict[str, Any], attempts: int = 3, delay: float = 2.0
+    ) -> dict[str, Any]:
+        """Re-fetch a PR until GitHub finishes computing ``mergeable_state``.
+
+        GitHub computes ``mergeable_state`` asynchronously, returning ``unknown``
+        until it settles. The PR is re-fetched (up to ``attempts`` times, waiting
+        ``delay`` seconds between tries) until the state is no longer ``unknown``.
+
+        :param pr: A PR detail dict as returned by ``get_pull_request``.
+        :param attempts: The maximum number of fetches before giving up.
+        :param delay: The delay in seconds between fetches.
+        """
+        for _ in range(attempts):
+            if pr.get("mergeable_state") not in (None, "unknown"):
+                break
+            time.sleep(delay)
+            pr = self.get_pull_request(pr["number"])
+        return pr
+
+    def should_auto_merge(
+        self,
+        pr_number: int,
+        *,
+        authors: Sequence[str],
+        approvers: Sequence[str],
+        allowed_types: Sequence[str] = DEFAULT_AUTO_MERGE_TYPES,
+        min_age_minutes: int = DEFAULT_MIN_AGE_MINUTES,
+        marker: str = DEFAULT_AUTO_MERGE_MARKER,
+    ) -> str | None:
+        """Decide whether a pull request is eligible for automatic merging.
+
+        All of the following must hold: the PR is not a draft; its author is in
+        ``authors``; its Conventional-Commits title type is in ``allowed_types``;
+        its ``mergeable_state`` is ``clean`` (no merge conflict and no failing or
+        pending status checks); its head commit is at least ``min_age_minutes``
+        old; and it is approved either by an ``APPROVED`` review or by a
+        ``marker`` comment from an approver in ``approvers`` (with no outstanding
+        ``CHANGES_REQUESTED``).
+
+        The age check guards against the race where a brand-new PR momentarily
+        reads ``clean`` before its checks register; it relies on the head
+        commit's timestamp, which is trustworthy given that ``authors`` is an
+        allowlist of trusted automation.
+
+        Checks run cheapest-first, returning ``None`` (with a logged reason) on
+        the first failure so extra requests are avoided.
+
+        :param pr_number: The number of the pull request.
+        :param authors: Logins whose PRs are eligible for auto-merge.
+        :param approvers: Logins whose reviews/marker comments grant approval.
+        :param allowed_types: Conventional-Commits title types eligible for auto-merge.
+        :param min_age_minutes: The minimum head-commit age in minutes.
+        :param marker: The marker substring an approver may comment to approve.
+        :return: The validated head SHA when the PR is eligible, else ``None``.
+            Passing the SHA to ``merge_pull_request`` pins the merge to the exact
+            commit checked here, so a push landing between this gate and the merge
+            is rejected rather than silently merged.
+        """
+        pr = self.get_pull_request(pr_number)
+
+        def skip(reason: str) -> None:
+            logger.info("Skipping auto-merge of PR #%s: %s.", pr_number, reason)
+            return None
+
+        # Field-only gates first; these need no extra requests.
+        field_failure = _field_gate_failure(pr, authors, allowed_types)
+        if field_failure:
+            return skip(field_failure)
+        # Check age before mergeable_state: one commit-date fetch is cheaper than
+        # settling mergeable_state, and mergeable_state is only trustworthy once
+        # the PR is old enough for its checks to have registered.
+        committed = self._head_commit_date(pr["head"]["sha"])
+        if not _old_enough(committed, min_age_minutes):
+            return skip(f"its head commit is newer than {min_age_minutes} minutes")
+        pr = self._settle_mergeable_state(pr)
+        if pr.get("mergeable_state") != "clean":
+            return skip(f"its mergeable_state is {pr.get('mergeable_state')!r}")
+        # The head SHA is read after settling so it matches the mergeable_state
+        # just validated, and is returned so the caller can pin the merge to it.
+        head_sha = pr["head"]["sha"]
+        reviews = self.get_pull_request_reviews(pr_number)
+        review_states = _approver_review_states(reviews, approvers)
+        # A standing change request vetoes the merge regardless of how approval
+        # would otherwise be granted, so it is checked before the marker path.
+        if "CHANGES_REQUESTED" in review_states:
+            return skip("an approver has requested changes")
+        if "APPROVED" in review_states:
+            return head_sha
+        comments = self.get_issue_comments(pr_number)
+        if _marker_approved(comments, approvers, marker):
+            return head_sha
+        return skip("it lacks an approving review or marker comment")
+
+    def auto_merge_pull_requests(
+        self,
+        *,
+        authors: Sequence[str],
+        approvers: Sequence[str],
+        allowed_types: Sequence[str] = DEFAULT_AUTO_MERGE_TYPES,
+        min_age_minutes: int = DEFAULT_MIN_AGE_MINUTES,
+        marker: str = DEFAULT_AUTO_MERGE_MARKER,
+        merge_method: MergeMethod | str = MergeMethod.MERGE,
+        dry_run: bool = False,
+    ) -> list[int]:
+        """Auto-merge every open pull request that passes ``should_auto_merge``.
+
+        :param authors: Logins whose PRs are eligible for auto-merge. An empty
+            allowlist makes nothing eligible (fail-safe).
+        :param approvers: Logins whose reviews/marker comments grant approval.
+        :param allowed_types: Conventional-Commits title types eligible for auto-merge.
+        :param min_age_minutes: The minimum head-commit age in minutes.
+        :param marker: The marker substring an approver may comment to approve.
+        :param merge_method: The merge method to use (``merge``, ``squash`` or
+            ``rebase``).
+        :param dry_run: When True, eligible PRs are logged and returned but not
+            merged.
+        :return: The numbers of the PRs that were merged (or, under ``dry_run``,
+            that would have been merged).
+        """
+        eligible = []
+        for pr in self.get_pull_requests():
+            number = pr["number"]
+            # Pre-filter on the list payload so PRs failing a field-only gate are
+            # dropped without fetching their (more expensive) single-PR detail.
+            field_failure = _field_gate_failure(pr, authors, allowed_types)
+            if field_failure:
+                logger.info("Skipping auto-merge of PR #%s: %s.", number, field_failure)
+                continue
+            # Both the eligibility checks and the merge issue requests that can
+            # fail for a single PR (a force-pushed/deleted head, a PR that became
+            # unmergeable, or a transient error). Isolate each PR so one failure
+            # skips that PR without aborting the rest of the batch.
+            try:
+                sha = self.should_auto_merge(
+                    number,
+                    authors=authors,
+                    approvers=approvers,
+                    allowed_types=allowed_types,
+                    min_age_minutes=min_age_minutes,
+                    marker=marker,
+                )
+                if sha is None:
+                    continue
+                if dry_run:
+                    logger.info("[dry-run] PR #%s is eligible for auto-merge.", number)
+                else:
+                    logger.info("Auto-merging PR #%s.", number)
+                    # Pin the merge to the SHA the gate validated so a push that
+                    # landed in between is rejected (409) instead of merged.
+                    self.merge_pull_request(number, merge_method, sha=sha)
+            except requests.HTTPError:
+                logger.warning(
+                    "Skipping PR #%s after a request failure.", number, exc_info=True
+                )
+                continue
+            eligible.append(number)
+        return eligible
 
     def get_pull_request_files(
         self, pr_number: int, n: int = 0
@@ -428,6 +762,22 @@ class Repository(GitHub):
         # literal `...` separator between them is preserved.
         basehead = f"{quote(base, safe='')}...{quote(head, safe='')}"
         return self._get(url=f"{self._url_compare}/{basehead}").json()
+
+    def _head_commit_date(self, sha: str) -> str:
+        """Return the committer date of ``sha`` without fetching its file diff.
+
+        The single-commit endpoint (``GET /commits/{sha}``) embeds the commit's
+        full file diff, which is wasteful when only the timestamp is needed. The
+        list-commits endpoint omits per-commit files, so requesting a single
+        commit starting at ``sha`` stays cheap even for a large diff.
+
+        :param sha: The head commit SHA.
+        """
+        commits = self._get(
+            url=f"{self._url_repo}/commits",
+            params={"sha": sha, "per_page": 1},
+        ).json()
+        return commits[0]["commit"]["committer"]["date"]
 
     def get_branches(self, n: int = 0) -> list[dict[str, Any]]:
         """List branches in this repository."""

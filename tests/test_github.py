@@ -1,15 +1,26 @@
 import os
 from base64 import b64decode
+from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 from nacl import encoding, public
 
 from github_rest_api.github import (
+    MergeMethod,
     Organization,
     Repository,
     User,
+    _approver_review_states,
+    _conventional_type,
     _encrypt_secret,
+    _field_gate_failure,
+    _login,
+    _marker_approved,
+    _old_enough,
+    _title_type_allowed,
     _validate_secret_name,
 )
 from github_rest_api.pr_content import deterministic_body, deterministic_title
@@ -255,3 +266,371 @@ def test_generate_pull_request_content_empty_returns_none():
             repo._generate_pull_request_content(base="main", head="dev", model="m")
             is None
         )
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("chore: bump deps", "chore"),
+        ("docs(readme): tweak", "docs"),
+        ("feat!: breaking change", "feat"),
+        ("Chore: capitalized", "chore"),
+        ("no conventional prefix", None),
+        ("", None),
+    ],
+)
+def test_conventional_type(title, expected):
+    assert _conventional_type(title) == expected
+
+
+@pytest.mark.parametrize(
+    ("title", "allowed", "expected"),
+    [
+        ("chore: x", ("chore", "docs"), True),
+        ("docs(scope): x", ("chore", "docs"), True),
+        ("feat: x", ("chore", "docs"), False),
+        ("no prefix", ("chore",), False),
+    ],
+)
+def test_title_type_allowed(title, allowed, expected):
+    assert _title_type_allowed(title, allowed) is expected
+
+
+@pytest.mark.parametrize(
+    ("obj", "expected"),
+    [
+        ({"user": {"login": "bot"}}, "bot"),
+        ({"user": None}, None),
+        ({}, None),
+    ],
+)
+def test_login(obj, expected):
+    assert _login(obj) == expected
+
+
+def test_field_gate_failure_passes_eligible_pr():
+    pr = {"draft": False, "user": {"login": "bot"}, "title": "chore: bump"}
+    assert _field_gate_failure(pr, ["bot"], ("chore",)) is None
+
+
+@pytest.mark.parametrize(
+    "pr",
+    [
+        {"draft": True, "user": {"login": "bot"}, "title": "chore: x"},
+        {"draft": False, "user": {"login": "stranger"}, "title": "chore: x"},
+        {"draft": False, "user": {"login": "bot"}, "title": "feat: x"},
+    ],
+)
+def test_field_gate_failure_rejects(pr):
+    assert _field_gate_failure(pr, ["bot"], ("chore",)) is not None
+
+
+def _review(login, state):
+    return {"user": {"login": login}, "state": state}
+
+
+def test_approver_review_states_approved():
+    assert _approver_review_states([_review("bot", "APPROVED")], ["bot"]) == {
+        "APPROVED"
+    }
+
+
+def test_approver_review_states_ignores_non_approvers():
+    assert _approver_review_states([_review("stranger", "APPROVED")], ["bot"]) == set()
+
+
+def test_approver_review_states_uses_latest_state_per_login():
+    # A later APPROVED overrides an earlier CHANGES_REQUESTED for the same login.
+    reviews = [_review("bot", "CHANGES_REQUESTED"), _review("bot", "APPROVED")]
+    assert _approver_review_states(reviews, ["bot"]) == {"APPROVED"}
+
+
+def test_approver_review_states_latest_changes_requested():
+    reviews = [_review("bot", "APPROVED"), _review("bot", "CHANGES_REQUESTED")]
+    assert _approver_review_states(reviews, ["bot"]) == {"CHANGES_REQUESTED"}
+
+
+def test_approver_review_states_combines_multiple_approvers():
+    reviews = [_review("bot", "APPROVED"), _review("human", "CHANGES_REQUESTED")]
+    assert _approver_review_states(reviews, ["bot", "human"]) == {
+        "APPROVED",
+        "CHANGES_REQUESTED",
+    }
+
+
+def test_approver_review_states_ignores_commented_reviews():
+    assert _approver_review_states([_review("bot", "COMMENTED")], ["bot"]) == set()
+
+
+def test_approver_review_states_dismissed_clears_earlier_approval():
+    reviews = [_review("bot", "APPROVED"), _review("bot", "DISMISSED")]
+    assert _approver_review_states(reviews, ["bot"]) == {"DISMISSED"}
+
+
+def test_approver_review_states_comment_does_not_clear_approval():
+    reviews = [_review("bot", "APPROVED"), _review("bot", "COMMENTED")]
+    assert _approver_review_states(reviews, ["bot"]) == {"APPROVED"}
+
+
+def test_marker_approved_true():
+    comments = [{"user": {"login": "bot"}, "body": "looks good <!-- ok -->"}]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->") is True
+
+
+def test_marker_approved_requires_approver_author():
+    comments = [{"user": {"login": "stranger"}, "body": "<!-- ok -->"}]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->") is False
+
+
+def test_marker_approved_requires_marker():
+    comments = [{"user": {"login": "bot"}, "body": "nice"}]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->") is False
+
+
+def test_old_enough_true_for_old_commit():
+    old = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    assert _old_enough(old, 10) is True
+
+
+def test_old_enough_false_for_recent_commit():
+    recent = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    assert _old_enough(recent, 10) is False
+
+
+def test_old_enough_parses_zulu_suffix():
+    old = "2000-01-01T00:00:00Z"
+    assert _old_enough(old, 10) is True
+
+
+def test_merge_pull_request_forwards_merge_method():
+    repo = Repository("token", "owner/name")
+    response = MagicMock()
+    response.json.return_value = {"merged": True}
+    with patch.object(repo, "_put", return_value=response) as mock_put:
+        repo.merge_pull_request(7)
+        # No sha given: the body omits it so GitHub does not pin the merge.
+        assert mock_put.call_args.kwargs["json"] == {"merge_method": "merge"}
+        repo.merge_pull_request(7, MergeMethod.SQUASH)
+        assert mock_put.call_args.kwargs["json"] == {"merge_method": "squash"}
+        repo.merge_pull_request(7, MergeMethod.SQUASH, sha="abc123")
+        assert mock_put.call_args.kwargs["json"] == {
+            "merge_method": "squash",
+            "sha": "abc123",
+        }
+
+
+def test_head_commit_date_uses_list_endpoint_without_files():
+    repo = Repository("token", "owner/name")
+    response = MagicMock()
+    response.json.return_value = [
+        {"commit": {"committer": {"date": "2026-06-27T00:00:00Z"}}}
+    ]
+    with patch.object(repo, "_get", return_value=response) as mock_get:
+        date = repo._head_commit_date("abc123")
+    assert date == "2026-06-27T00:00:00Z"
+    # The list-commits endpoint (not /commits/{sha}) is used so no file diff is
+    # downloaded, limited to the single head commit.
+    assert mock_get.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/commits"
+    )
+    assert mock_get.call_args.kwargs["params"] == {"sha": "abc123", "per_page": 1}
+
+
+def _auto_merge_repo(pr_overrides=None, *, reviews=None, comments=None, commit_age=30):
+    """Build a Repository with all should_auto_merge dependencies patched to pass.
+
+    Individual tests override one field to exercise a single failing gate.
+    """
+    repo = Repository("token", "owner/name")
+    pr = {
+        "number": 1,
+        "draft": False,
+        "user": {"login": "bot"},
+        "title": "chore: bump",
+        "mergeable_state": "clean",
+        "head": {"sha": "abc123"},
+    }
+    pr.update(pr_overrides or {})
+    committed = (datetime.now(timezone.utc) - timedelta(minutes=commit_age)).isoformat()
+    patches = [
+        patch.object(repo, "get_pull_request", return_value=pr),
+        patch.object(repo, "_head_commit_date", return_value=committed),
+        patch.object(
+            repo,
+            "get_pull_request_reviews",
+            return_value=[_review("bot", "APPROVED")] if reviews is None else reviews,
+        ),
+        patch.object(
+            repo, "get_issue_comments", return_value=comments if comments else []
+        ),
+    ]
+    return repo, patches
+
+
+def _run_should_auto_merge(repo, patches, **kwargs):
+    params = {"authors": ["bot"], "approvers": ["bot"]}
+    params.update(kwargs)
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        return repo.should_auto_merge(1, **params)
+
+
+def test_should_auto_merge_all_pass():
+    repo, patches = _auto_merge_repo()
+    # On eligibility, the validated head SHA is returned (head.sha in _auto_merge_repo).
+    assert _run_should_auto_merge(repo, patches) == "abc123"
+
+
+def test_should_auto_merge_marker_comment_path():
+    repo, patches = _auto_merge_repo(
+        reviews=[],
+        comments=[{"user": {"login": "bot"}, "body": "<!-- auto-merge: approved -->"}],
+    )
+    # On eligibility, the validated head SHA is returned (head.sha in _auto_merge_repo).
+    assert _run_should_auto_merge(repo, patches) == "abc123"
+
+
+def test_should_auto_merge_skips_draft():
+    repo, patches = _auto_merge_repo({"draft": True})
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_skips_untrusted_author():
+    repo, patches = _auto_merge_repo({"user": {"login": "stranger"}})
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_skips_disallowed_title_type():
+    repo, patches = _auto_merge_repo({"title": "feat: shiny"})
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_skips_unclean_state():
+    repo, patches = _auto_merge_repo({"mergeable_state": "blocked"})
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_skips_too_new():
+    repo, patches = _auto_merge_repo(commit_age=0)
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_skips_without_approval():
+    repo, patches = _auto_merge_repo(reviews=[], comments=[])
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_skips_when_changes_requested():
+    repo, patches = _auto_merge_repo(reviews=[_review("bot", "CHANGES_REQUESTED")])
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def test_should_auto_merge_changes_requested_vetoes_marker_comment():
+    # A standing change request must block the merge even when an approver also
+    # left an approving marker comment.
+    repo, patches = _auto_merge_repo(
+        reviews=[_review("bot", "CHANGES_REQUESTED")],
+        comments=[{"user": {"login": "bot"}, "body": "<!-- auto-merge: approved -->"}],
+    )
+    assert _run_should_auto_merge(repo, patches) is None
+
+
+def _pr_item(number):
+    """A list-endpoint PR payload that passes the field-only pre-filter gate."""
+    return {
+        "number": number,
+        "draft": False,
+        "user": {"login": "bot"},
+        "title": "chore: bump",
+    }
+
+
+def test_auto_merge_pull_requests_merges_only_eligible():
+    repo = Repository("token", "owner/name")
+    with (
+        patch.object(
+            repo, "get_pull_requests", return_value=[_pr_item(1), _pr_item(2)]
+        ),
+        # should_auto_merge returns the validated SHA for #1, None for #2.
+        patch.object(repo, "should_auto_merge", side_effect=["sha1", None]),
+        patch.object(repo, "merge_pull_request") as mock_merge,
+    ):
+        merged = repo.auto_merge_pull_requests(
+            authors=["bot"], approvers=["bot"], merge_method=MergeMethod.SQUASH
+        )
+    assert merged == [1]
+    # The merge is pinned to the SHA the gate validated.
+    mock_merge.assert_called_once_with(1, MergeMethod.SQUASH, sha="sha1")
+
+
+def test_auto_merge_pull_requests_prefilters_without_fetching_detail():
+    repo = Repository("token", "owner/name")
+    # PR #1 fails the field gate (untrusted author); PR #2 passes it.
+    item_1 = {"number": 1, "draft": False, "user": {"login": "x"}, "title": "chore: a"}
+    with (
+        patch.object(repo, "get_pull_requests", return_value=[item_1, _pr_item(2)]),
+        patch.object(repo, "should_auto_merge", return_value="sha2") as mock_eval,
+        patch.object(repo, "merge_pull_request") as mock_merge,
+    ):
+        merged = repo.auto_merge_pull_requests(authors=["bot"], approvers=["bot"])
+    # PR #1 is dropped by the pre-filter, so should_auto_merge is only called for #2.
+    assert merged == [2]
+    mock_eval.assert_called_once()
+    assert mock_eval.call_args.args == (2,)
+    mock_merge.assert_called_once_with(2, MergeMethod.MERGE, sha="sha2")
+
+
+def test_auto_merge_pull_requests_dry_run_merges_nothing():
+    repo = Repository("token", "owner/name")
+    with (
+        patch.object(
+            repo, "get_pull_requests", return_value=[_pr_item(1), _pr_item(2)]
+        ),
+        patch.object(repo, "should_auto_merge", return_value="sha"),
+        patch.object(repo, "merge_pull_request") as mock_merge,
+    ):
+        merged = repo.auto_merge_pull_requests(
+            authors=["bot"], approvers=["bot"], dry_run=True
+        )
+    assert merged == [1, 2]
+    mock_merge.assert_not_called()
+
+
+def test_auto_merge_pull_requests_continues_after_merge_failure():
+    repo = Repository("token", "owner/name")
+    with (
+        patch.object(
+            repo, "get_pull_requests", return_value=[_pr_item(1), _pr_item(2)]
+        ),
+        patch.object(repo, "should_auto_merge", return_value="sha"),
+        patch.object(
+            repo,
+            "merge_pull_request",
+            side_effect=[requests.HTTPError("409 conflict"), {"merged": True}],
+        ) as mock_merge,
+    ):
+        merged = repo.auto_merge_pull_requests(authors=["bot"], approvers=["bot"])
+    # PR #1 fails to merge but the batch continues; only PR #2 is reported merged.
+    assert merged == [2]
+    assert mock_merge.call_count == 2
+
+
+def test_auto_merge_pull_requests_continues_after_evaluation_failure():
+    repo = Repository("token", "owner/name")
+    with (
+        patch.object(
+            repo, "get_pull_requests", return_value=[_pr_item(1), _pr_item(2)]
+        ),
+        patch.object(
+            repo,
+            "should_auto_merge",
+            side_effect=[requests.HTTPError("404 head gone"), "sha2"],
+        ),
+        patch.object(repo, "merge_pull_request") as mock_merge,
+    ):
+        merged = repo.auto_merge_pull_requests(authors=["bot"], approvers=["bot"])
+    # Evaluating PR #1 raises (e.g. its head was force-pushed); the batch still
+    # evaluates and merges PR #2.
+    assert merged == [2]
+    mock_merge.assert_called_once_with(2, MergeMethod.MERGE, sha="sha2")
