@@ -777,6 +777,8 @@ class Repository(GitHub):
             url=f"{self._url_repo}/commits",
             params={"sha": sha, "per_page": 1},
         ).json()
+        if not isinstance(commits, list) or not commits:
+            raise ValueError(f"No commits found for SHA {sha}")
         return commits[0]["commit"]["committer"]["date"]
 
     def get_branches(self, n: int = 0) -> list[dict[str, Any]]:
