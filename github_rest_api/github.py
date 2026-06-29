@@ -826,10 +826,12 @@ class Repository(GitHub):
 
         :param sha: The head commit SHA.
         """
-        commits = self._get(
+        resp = self._get(
             url=f"{self._url_repo}/commits",
             params={"sha": sha, "per_page": 1},
-        ).json()
+        )
+        resp.raise_for_status()
+        commits = resp.json()
         if not isinstance(commits, list) or not commits:
             raise ValueError(f"No commits found for SHA {sha}")
         try:
