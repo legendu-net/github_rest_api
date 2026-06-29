@@ -585,10 +585,12 @@ class Repository(GitHub):
         body: dict[str, Any] = {"merge_method": str(merge_method)}
         if sha:
             body["sha"] = sha
-        return self._put(
+        resp = self._put(
             url=f"{self._url_pull}/{pr_number}/merge",
             json=body,
-        ).json()
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     def update_branch(self, update: str, upstream: str) -> dict[str, Any] | None:
         """Update a branch by creating a PR from upstream and then merge it.
