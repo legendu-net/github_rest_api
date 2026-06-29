@@ -212,25 +212,47 @@ def _approver_review_states(
             "CHANGES_REQUESTED",
             "DISMISSED",
         ):
-            latest[login] = state
+            latest[login.lower()] = state
     return set(latest.values())
 
 
 def _marker_approved(
-    comments: Sequence[dict[str, Any]], approvers: Sequence[str], marker: str
+    comments: Sequence[dict[str, Any]],
+    approvers: Sequence[str],
+    marker: str,
+    since: datetime,
 ) -> bool:
-    """Check whether an allowlisted approver left the auto-merge marker comment.
+    """Check whether an allowlisted approver marked the current head for merge.
+
+    Only comments created after ``since`` (the head commit's timestamp) count: a
+    marker left before the current head commit approved an older revision, so
+    honouring it would auto-merge newer, unreviewed changes.
 
     :param comments: Issue comments as returned by ``get_issue_comments``.
     :param approvers: Logins whose marker comments are trusted for auto-merge.
     :param marker: The marker substring signalling approval.
+    :param since: The head commit's timestamp; earlier comments are ignored.
     """
     approver_set = _normalized_logins(approvers)
     return any(
         _in_allowlist(_login(comment), approver_set)
         and marker in (comment.get("body") or "")
+        and _parse_iso(comment["created_at"]) > since
         for comment in comments
     )
+
+
+def _parse_iso(timestamp: str) -> datetime:
+    """Parse an ISO-8601 timestamp into a timezone-aware ``datetime``.
+
+    A naive timestamp (no offset) is assumed to be UTC.
+
+    :param timestamp: An ISO-8601 timestamp (e.g. ``2026-06-27T12:00:00Z``).
+    """
+    parsed = datetime.fromisoformat(timestamp)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _old_enough(commit_iso: str, min_age_minutes: int) -> bool:
@@ -239,9 +261,7 @@ def _old_enough(commit_iso: str, min_age_minutes: int) -> bool:
     :param commit_iso: An ISO-8601 UTC timestamp (e.g. ``2026-06-27T12:00:00Z``).
     :param min_age_minutes: The minimum age in minutes.
     """
-    committed = datetime.fromisoformat(commit_iso)
-    if committed.tzinfo is None:
-        committed = committed.replace(tzinfo=timezone.utc)
+    committed = _parse_iso(commit_iso)
     return datetime.now(timezone.utc) - committed >= timedelta(minutes=min_age_minutes)
 
 
@@ -648,8 +668,8 @@ class Repository(GitHub):
         its ``mergeable_state`` is ``clean`` (no merge conflict and no failing or
         pending status checks); its head commit is at least ``min_age_minutes``
         old; and it is approved either by an ``APPROVED`` review or by a
-        ``marker`` comment from an approver in ``approvers`` (with no outstanding
-        ``CHANGES_REQUESTED``).
+        ``marker`` comment posted after the head commit by an approver in
+        ``approvers`` (with no outstanding ``CHANGES_REQUESTED``).
 
         The age check guards against the race where a brand-new PR momentarily
         reads ``clean`` before its checks register; it relies on the head
@@ -701,7 +721,7 @@ class Repository(GitHub):
         if "APPROVED" in review_states:
             return head_sha
         comments = self.get_issue_comments(pr_number)
-        if _marker_approved(comments, approvers, marker):
+        if _marker_approved(comments, approvers, marker, _parse_iso(committed)):
             return head_sha
         return skip("it lacks an approving review or marker comment")
 

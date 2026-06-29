@@ -372,19 +372,56 @@ def test_approver_review_states_comment_does_not_clear_approval():
     assert _approver_review_states(reviews, ["bot"]) == {"APPROVED"}
 
 
+_HEAD_COMMITTED = datetime(2026, 6, 28, 12, 0, tzinfo=timezone.utc)
+_AFTER_HEAD = "2026-06-28T12:05:00Z"
+_BEFORE_HEAD = "2026-06-28T11:55:00Z"
+
+
 def test_marker_approved_true():
-    comments = [{"user": {"login": "bot"}, "body": "looks good <!-- ok -->"}]
-    assert _marker_approved(comments, ["bot"], "<!-- ok -->") is True
+    comments = [
+        {
+            "user": {"login": "bot"},
+            "body": "looks good <!-- ok -->",
+            "created_at": _AFTER_HEAD,
+        }
+    ]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->", _HEAD_COMMITTED) is True
 
 
 def test_marker_approved_requires_approver_author():
-    comments = [{"user": {"login": "stranger"}, "body": "<!-- ok -->"}]
-    assert _marker_approved(comments, ["bot"], "<!-- ok -->") is False
+    comments = [
+        {
+            "user": {"login": "stranger"},
+            "body": "<!-- ok -->",
+            "created_at": _AFTER_HEAD,
+        }
+    ]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->", _HEAD_COMMITTED) is False
 
 
 def test_marker_approved_requires_marker():
-    comments = [{"user": {"login": "bot"}, "body": "nice"}]
-    assert _marker_approved(comments, ["bot"], "<!-- ok -->") is False
+    comments = [{"user": {"login": "bot"}, "body": "nice", "created_at": _AFTER_HEAD}]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->", _HEAD_COMMITTED) is False
+
+
+def test_marker_approved_ignores_comment_before_head_commit():
+    comments = [
+        {"user": {"login": "bot"}, "body": "<!-- ok -->", "created_at": _BEFORE_HEAD}
+    ]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->", _HEAD_COMMITTED) is False
+
+
+def test_marker_approved_ignores_comment_at_head_commit():
+    # A marker posted in the same second as the head commit is rejected: the gate
+    # is strict ("after"), erring toward not merging unreviewed changes.
+    comments = [
+        {
+            "user": {"login": "bot"},
+            "body": "<!-- ok -->",
+            "created_at": _HEAD_COMMITTED.isoformat(),
+        }
+    ]
+    assert _marker_approved(comments, ["bot"], "<!-- ok -->", _HEAD_COMMITTED) is False
 
 
 def test_old_enough_true_for_old_commit():
@@ -485,10 +522,35 @@ def test_should_auto_merge_all_pass():
 def test_should_auto_merge_marker_comment_path():
     repo, patches = _auto_merge_repo(
         reviews=[],
-        comments=[{"user": {"login": "bot"}, "body": "<!-- auto-merge: approved -->"}],
+        comments=[
+            {
+                "user": {"login": "bot"},
+                "body": "<!-- auto-merge: approved -->",
+                # Posted after the head commit (which _auto_merge_repo dates 30 min ago).
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ],
     )
     # On eligibility, the validated head SHA is returned (head.sha in _auto_merge_repo).
     assert _run_should_auto_merge(repo, patches) == "abc123"
+
+
+def test_should_auto_merge_skips_marker_comment_before_head_commit():
+    # A marker left before the current head commit approved an older revision and
+    # must not auto-merge the newer, unreviewed changes.
+    repo, patches = _auto_merge_repo(
+        reviews=[],
+        comments=[
+            {
+                "user": {"login": "bot"},
+                "body": "<!-- auto-merge: approved -->",
+                "created_at": (
+                    datetime.now(timezone.utc) - timedelta(hours=1)
+                ).isoformat(),
+            }
+        ],
+    )
+    assert _run_should_auto_merge(repo, patches) is None
 
 
 def test_should_auto_merge_skips_draft():
