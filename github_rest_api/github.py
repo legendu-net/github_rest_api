@@ -810,7 +810,12 @@ class Repository(GitHub):
         ).json()
         if not isinstance(commits, list) or not commits:
             raise ValueError(f"No commits found for SHA {sha}")
-        return commits[0]["commit"]["committer"]["date"]
+        try:
+            return commits[0]["commit"]["committer"]["date"]
+        except (KeyError, TypeError) as e:
+            raise ValueError(
+                f"Unexpected commit payload structure for SHA {sha}"
+            ) from e
 
     def get_branches(self, n: int = 0) -> list[dict[str, Any]]:
         """List branches in this repository."""
