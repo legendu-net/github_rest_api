@@ -1,6 +1,7 @@
 """GitHub REST APIs."""
 
 from .github import (
+    MergeMethod,
     Organization,
     Repository,
     RepositoryType,
@@ -8,4 +9,11 @@ from .github import (
     User,
 )
 
-__all__ = ["Organization", "Repository", "RepositoryType", "SecretVisibility", "User"]
+__all__ = [
+    "MergeMethod",
+    "Organization",
+    "Repository",
+    "RepositoryType",
+    "SecretVisibility",
+    "User",
+]
