@@ -240,6 +240,8 @@ def _old_enough(commit_iso: str, min_age_minutes: int) -> bool:
     :param min_age_minutes: The minimum age in minutes.
     """
     committed = datetime.fromisoformat(commit_iso)
+    if committed.tzinfo is None:
+        committed = committed.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - committed >= timedelta(minutes=min_age_minutes)
 
 
