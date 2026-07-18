@@ -136,6 +136,54 @@ def test_deterministic_title_no_scope_for_root_files():
     assert deterministic_title(compare) == "chore: bump"
 
 
+def test_deterministic_title_non_conventional_multi_uses_first_subject():
+    compare = {
+        "commits": [
+            _commit("1", "did some work"),
+            _commit("2", "did more work"),
+        ],
+        "files": [_file("pkg/a.py"), _file("pkg/b.py")],
+    }
+    # No conventional commits: fall back to the first subject rather than the
+    # generic "update N commits" placeholder.
+    assert deterministic_title(compare) == "chore(pkg): did some work"
+
+
+def test_deterministic_title_github_scope_maps_to_ci():
+    compare = {
+        "commits": [
+            _commit("1", "Claude PR Assistant workflow"),
+            _commit("2", "Claude Code Review workflow"),
+        ],
+        "files": [
+            _file(".github/workflows/claude.yml", "added"),
+            _file(".github/workflows/claude-review.yml", "added"),
+        ],
+    }
+    # `.github`-only changes become `ci` (with the redundant scope dropped), and
+    # the first subject supplies the description.
+    assert deterministic_title(compare) == "ci: Claude PR Assistant workflow"
+
+
+def test_deterministic_title_github_scope_respects_conventional_type():
+    compare = {
+        "commits": [_commit("1", "docs: update issue template")],
+        "files": [_file(".github/ISSUE_TEMPLATE/bug.md")],
+    }
+    # An explicit conventional type wins over the `.github` -> `ci` fallback.
+    assert deterministic_title(compare) == "docs(.github): update issue template"
+
+
+def test_deterministic_title_github_ci_not_applied_when_mixed_with_other_dir():
+    compare = {
+        "commits": [_commit("1", "tweak things")],
+        "files": [_file(".github/workflows/ci.yml"), _file("pkg/a.py")],
+    }
+    # Changes span `.github` and another top-level dir, so no common scope and no
+    # `ci` upgrade -- the generic `chore` fallback applies.
+    assert deterministic_title(compare) == "chore: tweak things"
+
+
 def test_deterministic_body_sections():
     body = deterministic_body(COMPARE)
     assert "## Summary" in body

@@ -83,9 +83,15 @@ def deterministic_title(compare: dict[str, Any]) -> str:
     """Derive a Conventional-Commits title from a comparison result.
 
     The type is the most significant type present across the commits
-    (``feat`` > ``fix`` > the most frequent parsed type > ``chore``); the scope
-    is the common top-level directory of the changed files; ``!`` is appended
-    for breaking changes.
+    (``feat`` > ``fix`` > the most frequent parsed type). When no commit follows
+    the Conventional-Commits grammar, the type is ``ci`` for changes confined to
+    ``.github`` and ``chore`` otherwise. The scope is the common top-level
+    directory of the changed files; ``!`` is appended for breaking changes.
+
+    The description reuses a matching commit's description when available and
+    otherwise falls back to the first commit's subject line, so a genuinely
+    descriptive (if non-conventional) subject is preserved rather than replaced
+    by a generic placeholder.
 
     :param compare: The comparison result from `Repository.compare`.
     """
@@ -94,17 +100,22 @@ def deterministic_title(compare: dict[str, Any]) -> str:
     parsed = [parse_conventional(subject) for subject in subjects]
     types = [item[0] for item in parsed if item]
     scope = _common_scope(compare)
-    prefix_scope = f"({scope})" if scope else ""
-    if not subjects:
-        return f"chore{prefix_scope}: update"
     if "feat" in types:
         type_ = "feat"
     elif "fix" in types:
         type_ = "fix"
     elif types:
         type_ = Counter(types).most_common(1)[0][0]
+    elif scope == ".github":
+        # Changes confined to `.github` (e.g. workflow files) are conventionally
+        # `ci`; the type already conveys the location, so drop the (redundant)
+        # `.github` scope.
+        type_, scope = "ci", None
     else:
         type_ = "chore"
+    prefix_scope = f"({scope})" if scope else ""
+    if not subjects:
+        return f"{type_}{prefix_scope}: update"
     breaking = any(item[2] for item in parsed if item) or any(
         _BREAKING_CHANGE_PATTERN.search(message) for message in messages
     )
@@ -113,7 +124,7 @@ def deterministic_title(compare: dict[str, Any]) -> str:
     else:
         description = next(
             (item[3] for item in parsed if item and item[0] == type_),
-            f"update {len(subjects)} commits",
+            subjects[0],
         )
     return f"{type_}{prefix_scope}{'!' if breaking else ''}: {description}"
 
