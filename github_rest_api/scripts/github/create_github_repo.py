@@ -38,6 +38,13 @@ def _remote_url(repo: str, protocol: str) -> str:
     return f"https://github.com/{repo}.git"
 
 
+def _ensure_remote(path: Path, repo: str, protocol: str) -> None:
+    try:
+        porcelain.remote_add(path, "origin", _remote_url(repo, protocol))
+    except porcelain.RemoteExists:
+        pass
+
+
 def _init_local_repo(
     repo: str,
     language: str,
@@ -54,29 +61,30 @@ def _init_local_repo(
         readme.write_text(f"# {repo_name}\n")
     if not (path / ".git").exists():
         porcelain.init(path=path)
-        porcelain.remote_add(path, "origin", _remote_url(repo, protocol))
         initial_branch = (
             (path / ".git" / "HEAD").read_text().strip().partition("refs/heads/")[-1]
         )
         porcelain.add(repo=path)
         porcelain.commit(repo=path, message="first commit")
-
-        def _create_push_branch(branch: str):
+        for branch in branches:
             if branch != initial_branch:
                 porcelain.branch_create(repo=path, name=branch)
-            porcelain.checkout(repo=path, target=branch)
-            porcelain.push(
-                repo=path,
-                remote_location=_remote_url(repo, "https"),
-                username="x-access-token",
-                password=token,
-            )
-
-        for branch in branches:
-            _create_push_branch(branch)
         porcelain.checkout(repo=path, target=branches[0])
         if initial_branch not in branches:
             porcelain.branch_delete(repo=path, name=initial_branch)
+    _ensure_remote(path, repo, protocol)
+    local_branches = {b.decode() for b in porcelain.branch_list(path)}
+    branches_to_push = [branch for branch in branches if branch in local_branches]
+    if not branches_to_push:
+        branches_to_push = [porcelain.active_branch(path).decode()]
+    for branch in branches_to_push:
+        porcelain.push(
+            repo=path,
+            remote_location=_remote_url(repo, "https"),
+            refspecs=[branch.encode()],
+            username="x-access-token",
+            password=token,
+        )
     _add_workflow(path, language)
 
 
