@@ -61,6 +61,7 @@ def _init_local_repo(
         readme.write_text(f"# {repo_name}\n")
     if not (path / ".git").exists():
         porcelain.init(path=path)
+    if not porcelain.branch_list(path):
         initial_branch = (
             (path / ".git" / "HEAD").read_text().strip().partition("refs/heads/")[-1]
         )
