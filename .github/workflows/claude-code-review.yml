@@ -38,7 +38,19 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          prompt: |
+            Review the pull request ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            with the /code-review:code-review command.
+
+            When the review is finished, decide whether this PR is safe to merge
+            automatically: it is safe only if the review surfaced no correctness bugs
+            and no other blocking issues (non-blocking style or cleanup suggestions do
+            not disqualify it). If and only if it is safe, post a single new comment on
+            the pull request whose body includes, on its own line, this exact marker
+            (a short note such as "Approved for auto-merge." above it is fine):
+            <!-- auto-merge: approved -->
+            If you found any blocking issue, do NOT post the marker. Always post a fresh
+            comment rather than editing an existing one, so the marker's timestamp
+            follows the latest commit.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-
