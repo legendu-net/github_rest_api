@@ -65,7 +65,7 @@ def _init_local_repo(
         initial_branch = (
             (path / ".git" / "HEAD").read_text().strip().partition("refs/heads/")[-1]
         )
-        porcelain.add(repo=path)
+        porcelain.add(repo=path, paths=["README.md"])
         porcelain.commit(repo=path, message="first commit")
         for branch in branches:
             if branch != initial_branch:
