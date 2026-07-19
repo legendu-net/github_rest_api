@@ -80,7 +80,7 @@ def _init_local_repo(
     _add_workflow(path, language)
 
 
-def add_github_repo(
+def create_github_repo(
     repo: str,
     private: bool,
     language: str,
@@ -131,7 +131,7 @@ def _add_workflow(path: Path, language: str, workflow_dir: Path | None = None) -
 
 
 def parse_args(args=None, namespace=None):
-    parser = argparse.ArgumentParser(description="Add a GitHub repository.")
+    parser = argparse.ArgumentParser(description="Create a GitHub repository.")
     parser.add_argument(
         "repo",
         help="The GitHub repo (in the format of owner/repo) to be created.",
@@ -203,7 +203,7 @@ def parse_args(args=None, namespace=None):
 def main() -> int:
     args = parse_args()
     try:
-        add_github_repo(
+        create_github_repo(
             repo=args.repo,
             private=args.private,
             language=args.language,
