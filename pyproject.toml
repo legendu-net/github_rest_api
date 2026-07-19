@@ -4,7 +4,7 @@ requires = [ "hatchling" ]
 
 [project]
 name = "github-rest-api"
-version = "0.45.0"
+version = "0.46.0"
 description = "Simple wrapper of GitHub REST APIs."
 readme = "README.md"
 authors = [ { name = "Ben Du", email = "longendu@yahoo.com" } ]
@@ -27,10 +27,10 @@ dependencies = [
 optional-dependencies.ai = [
   "litellm>=1.50",
 ]
-scripts.create_github_repo = "github_rest_api.scripts.github.create_github_repo:main"
 scripts.auto_merge_pull_request = "github_rest_api.scripts.github.auto_merge_pull_request:main"
 scripts.build_container_images = "github_rest_api.scripts.container.build_container_images:main"
 scripts.config_container = "github_rest_api.scripts.container.config_container:main"
+scripts.create_github_repo = "github_rest_api.scripts.github.create_github_repo:main"
 scripts.create_pull_request = "github_rest_api.scripts.github.create_pull_request:main"
 scripts.release_on_github = "github_rest_api.scripts.github.release_on_github:main"
 scripts.remove_branch = "github_rest_api.scripts.github.remove_branch:main"
