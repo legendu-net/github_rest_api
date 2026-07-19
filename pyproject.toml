@@ -4,7 +4,7 @@ requires = [ "hatchling" ]
 
 [project]
 name = "github-rest-api"
-version = "0.47.1"
+version = "0.47.2"
 description = "Simple wrapper of GitHub REST APIs."
 readme = "README.md"
 authors = [ { name = "Ben Du", email = "longendu@yahoo.com" } ]
