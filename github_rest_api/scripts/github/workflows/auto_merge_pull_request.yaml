@@ -1,0 +1,30 @@
+name: Auto Merge PR
+on:
+  pull_request_review:
+    types:
+      - submitted
+  issue_comment:
+    types:
+      - created
+  check_suite:
+    types:
+      - completed
+  schedule:
+    - cron: '0 * * * *'
+      timezone: 'America/Los_Angeles'
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  auto_merge_pull_request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
+      - name: Auto Merge PR
+        run: |
+          uvx --from github-rest-api@latest auto_merge_pull_request \
+            --authors dclong \
+            --approvers dclong 'claude[bot]' 'gemini-code-assist[bot]' \
+            --token ${{ secrets.ACTIONS_TOKEN }}
