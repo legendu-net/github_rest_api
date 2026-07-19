@@ -117,7 +117,7 @@ def _add_workflow(path: Path, language: str, workflow_dir: Path | None = None) -
         workflow_dir = Path(__file__).parent / "workflows"
     dir_dest = path / ".github" / "workflows"
     dir_dest.mkdir(parents=True, exist_ok=True)
-    for yaml in workflow_dir.glob("*.yml"):
+    for yaml in workflow_dir.glob("*.yaml"):
         if not (dir_dest / yaml.name).exists():
             shutil.copy2(yaml, dir_dest)
     if not language:
@@ -125,7 +125,7 @@ def _add_workflow(path: Path, language: str, workflow_dir: Path | None = None) -
     lang_dir = workflow_dir / language
     if not lang_dir.exists():
         return
-    for yaml in lang_dir.glob("*.yml"):
+    for yaml in lang_dir.glob("*.yaml"):
         if not (dir_dest / yaml.name).exists():
             shutil.copy2(yaml, dir_dest)
 
