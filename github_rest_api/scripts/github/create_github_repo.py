@@ -45,6 +45,17 @@ def _ensure_remote(path: Path, repo: str, protocol: str) -> None:
         pass
 
 
+def _active_branch(path: Path) -> str:
+    try:
+        return porcelain.active_branch(path).decode()
+    except (IndexError, ValueError) as e:
+        raise ValueError(
+            f"HEAD of the local repo at '{path}' is detached (not on any branch), "
+            "which is unsupported (this happens, e.g., with a colocated Jujutsu repo). "
+            "Check out a branch (e.g. `git switch -c main`) before running this command."
+        ) from e
+
+
 def _init_local_repo(
     repo: str,
     language: str,
@@ -62,9 +73,7 @@ def _init_local_repo(
     if not (path / ".git").exists():
         porcelain.init(path=path)
     if not porcelain.branch_list(path):
-        initial_branch = (
-            (path / ".git" / "HEAD").read_text().strip().partition("refs/heads/")[-1]
-        )
+        initial_branch = _active_branch(path)
         porcelain.add(repo=path, paths=["README.md"])
         porcelain.commit(repo=path, message="first commit")
         for branch in branches:
@@ -77,7 +86,7 @@ def _init_local_repo(
     local_branches = {b.decode() for b in porcelain.branch_list(path)}
     branches_to_push = [branch for branch in branches if branch in local_branches]
     if not branches_to_push:
-        branches_to_push = [porcelain.active_branch(path).decode()]
+        branches_to_push = [_active_branch(path)]
     for branch in branches_to_push:
         porcelain.push(
             repo=path,
