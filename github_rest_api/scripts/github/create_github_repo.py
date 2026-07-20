@@ -70,6 +70,9 @@ def _init_local_repo(
     push: bool,
     branches: Sequence[str] = ("main",),
 ) -> None:
+    branches = list(dict.fromkeys(branches))
+    if not branches:
+        raise ValueError("At least one branch must be specified.")
     repo_name = repo.split("/")[-1]
     path = Path(dir_) if dir_ else Path(repo_name)
     path.mkdir(parents=True, exist_ok=True)
@@ -95,13 +98,15 @@ def _init_local_repo(
         if initial_branch not in branches:
             porcelain.branch_delete(repo=path, name=initial_branch)
             logger.info("Deleted initial branch '%s'", initial_branch)
+    else:
+        existing_branches = {b.decode() for b in porcelain.branch_list(path)}
+        for branch in branches:
+            if branch not in existing_branches:
+                porcelain.branch_create(repo=path, name=branch)
+                logger.info("Created branch '%s' from HEAD", branch)
     _ensure_remote(path, repo, protocol)
     if push:
-        local_branches = {b.decode() for b in porcelain.branch_list(path)}
-        branches_to_push = [branch for branch in branches if branch in local_branches]
-        if not branches_to_push:
-            branches_to_push = [_active_branch(path)]
-        for branch in branches_to_push:
+        for branch in branches:
             logger.info("Pushing branch '%s' to remote '%s'...", branch, repo)
             porcelain.push(
                 repo=path,
