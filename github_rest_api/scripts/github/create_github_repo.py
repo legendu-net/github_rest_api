@@ -67,6 +67,7 @@ def _init_local_repo(
     dir_: str,
     token: str,
     protocol: str,
+    push: bool,
     branches: Sequence[str] = ("main",),
 ) -> None:
     repo_name = repo.split("/")[-1]
@@ -95,20 +96,23 @@ def _init_local_repo(
             porcelain.branch_delete(repo=path, name=initial_branch)
             logger.info("Deleted initial branch '%s'", initial_branch)
     _ensure_remote(path, repo, protocol)
-    local_branches = {b.decode() for b in porcelain.branch_list(path)}
-    branches_to_push = [branch for branch in branches if branch in local_branches]
-    if not branches_to_push:
-        branches_to_push = [_active_branch(path)]
-    for branch in branches_to_push:
-        logger.info("Pushing branch '%s' to remote '%s'...", branch, repo)
-        porcelain.push(
-            repo=path,
-            remote_location=_remote_url(repo, "https"),
-            refspecs=[branch.encode()],
-            username="x-access-token",
-            password=token,
-        )
-        logger.info("Successfully pushed branch '%s'.", branch)
+    if push:
+        local_branches = {b.decode() for b in porcelain.branch_list(path)}
+        branches_to_push = [branch for branch in branches if branch in local_branches]
+        if not branches_to_push:
+            branches_to_push = [_active_branch(path)]
+        for branch in branches_to_push:
+            logger.info("Pushing branch '%s' to remote '%s'...", branch, repo)
+            porcelain.push(
+                repo=path,
+                remote_location=_remote_url(repo, "https"),
+                refspecs=[branch.encode()],
+                username="x-access-token",
+                password=token,
+            )
+            logger.info("Successfully pushed branch '%s'.", branch)
+    else:
+        logger.info("Skipping push (pass --push to push branches to the remote).")
     _add_workflow(path, language)
 
 
@@ -120,6 +124,7 @@ def create_github_repo(
     dir_: str,
     token: str,
     protocol: str,
+    push: bool,
     branches: Sequence[str] = ("main",),
 ) -> None:
     token = token or os.getenv("GITHUB_TOKEN", "")
@@ -141,6 +146,7 @@ def create_github_repo(
         token=token,
         branches=branches,
         protocol=protocol,
+        push=push,
     )
 
 
@@ -223,7 +229,7 @@ def parse_args(args=None, namespace=None):
         nargs="+",
         default=["main"],
         metavar="BRANCH",
-        help="Branches to create and push to remote (default: main).",
+        help="Branches to create (and push if --push is set) (default: main).",
     )
     parser.add_argument(
         "--https",
@@ -232,6 +238,12 @@ def parse_args(args=None, namespace=None):
         const="https",
         default="git",
         help="Use the HTTPS protocol for the remote URL.",
+    )
+    parser.add_argument(
+        "--push",
+        dest="push",
+        action="store_true",
+        help="Push branches to the remote (by default, nothing is pushed).",
     )
     parser.add_argument(
         "-v",
@@ -256,6 +268,7 @@ def main() -> int:
             token=args.token,
             branches=args.branches,
             protocol=args.protocol,
+            push=args.push,
         )
     except Exception as e:
         logger.error("Failed to create GitHub repo: %s", e, exc_info=args.verbose)
