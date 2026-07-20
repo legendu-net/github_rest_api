@@ -27,4 +27,5 @@ jobs:
           uvx --from github-rest-api@latest auto_merge_pull_request \
             --authors dclong \
             --approvers dclong 'claude[bot]' 'gemini-code-assist[bot]' \
+            --marker 'AUTO_MERGE_APPROVED' \
             --token ${{ secrets.ACTIONS_TOKEN }}
