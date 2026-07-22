@@ -36,6 +36,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Post the review comment with a token that has write access. Using the
+          # ACTIONS_TOKEN PAT also makes the comment (and its AUTO_MERGE_APPROVED
+          # marker) come from dclong, who is in the auto-merge approver allowlist.
+          github_token: ${{ secrets.ACTIONS_TOKEN }}
+          # Force tag mode so the action creates and updates a PR comment with the
+          # review; without this the code-review run posts nothing.
+          track_progress: true
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: |
@@ -45,12 +52,10 @@ jobs:
             When the review is finished, decide whether this PR is safe to merge
             automatically: it is safe only if the review surfaced no correctness bugs
             and no other blocking issues (non-blocking style or cleanup suggestions do
-            not disqualify it). If and only if it is safe, post a single new comment on
-            the pull request whose body includes, on its own line, this exact marker
-            (a short note such as "Approved for auto-merge." above it is fine):
-            <!-- auto-merge: approved -->
-            If you found any blocking issue, do NOT post the marker. Always post a fresh
-            comment rather than editing an existing one, so the marker's timestamp
-            follows the latest commit.
+            not disqualify it). If and only if it is safe, end your review with this
+            token alone on its own final line, exactly and verbatim:
+            AUTO_MERGE_APPROVED
+            Do not write this token anywhere else in your review, and do not write it
+            at all if you found any blocking issue.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
