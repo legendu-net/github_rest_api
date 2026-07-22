@@ -33,7 +33,7 @@ DEFAULT_PR_MODEL = "anthropic/claude-haiku-4-5-20251001"
 # for AI reviewers that only comment instead of submitting a formal review.
 DEFAULT_AUTO_MERGE_MARKER = "AUTO_MERGE_APPROVED"
 # Conventional-commit title types eligible for auto-merge.
-DEFAULT_AUTO_MERGE_TYPES = ("chore", "docs", "deps")
+DEFAULT_AUTO_MERGE_TYPES = ("build", "chore", "ci", "docs", "deps")
 # A PR is only auto-merged once its head commit is at least this old, an anti-race
 # guard so a PR that momentarily reads `clean` before CI registers is not merged.
 # A just-created PR is simply deferred to the next run, never dropped, so a small
