@@ -177,8 +177,15 @@ def _field_gate_failure(
         return "it is a draft"
     if not _in_allowlist(_login(pr), _normalized_logins(authors)):
         return "its author is not in the allowlist"
-    if not _title_type_allowed(pr.get("title") or "", allowed_types):
-        return "its title type is not auto-merge eligible"
+    title = pr.get("title") or ""
+    if not _title_type_allowed(title, allowed_types):
+        type_ = _conventional_type(title)
+        current = f"'{type_}'" if type_ is not None else "missing/unrecognized"
+        eligible = ", ".join(allowed_types) or "none"
+        return (
+            f"its title type ({current}) is not auto-merge eligible "
+            f"(eligible types: {eligible})"
+        )
     return None
 
 
