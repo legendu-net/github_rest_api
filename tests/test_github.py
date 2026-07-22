@@ -525,7 +525,7 @@ def test_should_auto_merge_marker_comment_path():
         comments=[
             {
                 "user": {"login": "bot"},
-                "body": "<!-- auto-merge: approved -->",
+                "body": "AUTO_MERGE_APPROVED",
                 # Posted after the head commit (which _auto_merge_repo dates 30 min ago).
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -543,7 +543,7 @@ def test_should_auto_merge_skips_marker_comment_before_head_commit():
         comments=[
             {
                 "user": {"login": "bot"},
-                "body": "<!-- auto-merge: approved -->",
+                "body": "AUTO_MERGE_APPROVED",
                 "created_at": (
                     datetime.now(timezone.utc) - timedelta(hours=1)
                 ).isoformat(),
@@ -593,7 +593,7 @@ def test_should_auto_merge_changes_requested_vetoes_marker_comment():
     # left an approving marker comment.
     repo, patches = _auto_merge_repo(
         reviews=[_review("bot", "CHANGES_REQUESTED")],
-        comments=[{"user": {"login": "bot"}, "body": "<!-- auto-merge: approved -->"}],
+        comments=[{"user": {"login": "bot"}, "body": "AUTO_MERGE_APPROVED"}],
     )
     assert _run_should_auto_merge(repo, patches) is None
 
