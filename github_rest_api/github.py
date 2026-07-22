@@ -31,7 +31,7 @@ DEFAULT_PR_MODEL = "anthropic/claude-haiku-4-5-20251001"
 # Defaults for automatic pull request merging (see Repository.auto_merge_pull_requests).
 # A marker comment from an allowlisted approver is accepted as an approval signal
 # for AI reviewers that only comment instead of submitting a formal review.
-DEFAULT_AUTO_MERGE_MARKER = "<!-- auto-merge: approved -->"
+DEFAULT_AUTO_MERGE_MARKER = "AUTO_MERGE_APPROVED"
 # Conventional-commit title types eligible for auto-merge.
 DEFAULT_AUTO_MERGE_TYPES = ("chore", "docs", "deps")
 # A PR is only auto-merged once its head commit is at least this old, an anti-race
