@@ -10,13 +10,19 @@ on:
     #   - "src/**/*.js"
     #   - "src/**/*.jsx"
 
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Only review non-draft PRs whose branch lives in this repository. A PR from
+    # a fork is attacker-controlled input, and reviewing one with the ACTIONS_TOKEN
+    # PAT below would let a crafted title/description prompt-inject the
+    # AUTO_MERGE_APPROVED marker into a comment attributed to an auto-merge approver.
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.draft == false
 
     runs-on: ubuntu-latest
     permissions:
