@@ -5,6 +5,7 @@ The branch is updated (using dev) before creating the PR.
 import os
 import sys
 from argparse import ArgumentParser, Namespace
+from typing import Any
 
 from github_rest_api import Repository
 from github_rest_api.github import DEFAULT_PR_MODEL
@@ -65,6 +66,12 @@ def parse_args(args=None, namespace=None) -> Namespace:
         help="Update the head branch using the base branch before creating the pull request.",
     )
     parser.add_argument(
+        "--draft",
+        dest="draft",
+        action="store_true",
+        help="Create the pull request as a draft.",
+    )
+    parser.add_argument(
         "--model",
         dest="model",
         default="",
@@ -100,7 +107,7 @@ def main() -> int:
     repo = Repository(args.token, os.environ["GITHUB_REPOSITORY"])
     if args.update:
         repo.update_branch(update=args.head_branch, upstream=args.base_branch)
-    pull_request = {
+    pull_request: dict[str, Any] = {
         "base": args.base_branch,
         "head": args.head_branch,
     }
@@ -108,6 +115,8 @@ def main() -> int:
         pull_request["title"] = args.title
     if args.body:
         pull_request["body"] = args.body
+    if args.draft:
+        pull_request["draft"] = True
     # An empty model generates the title/body deterministically; a --model uses
     # an LLM (falling back to deterministic generation on failure).
     repo.create_pull_request(pull_request, model=args.model)
