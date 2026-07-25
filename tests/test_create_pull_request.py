@@ -53,3 +53,15 @@ def test_main_without_options_defaults_to_deterministic(monkeypatch):
 def test_main_with_model_uses_llm(monkeypatch):
     call = _run_main(monkeypatch, ["--model", "gemini/g"])
     assert call.kwargs["model"] == "gemini/g"
+
+
+def test_main_without_draft_omits_draft(monkeypatch):
+    call = _run_main(monkeypatch, [])
+    sent = call.args[0]
+    assert "draft" not in sent
+
+
+def test_main_with_draft_sets_draft(monkeypatch):
+    call = _run_main(monkeypatch, ["--draft"])
+    sent = call.args[0]
+    assert sent["draft"] is True

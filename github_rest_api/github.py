@@ -550,7 +550,7 @@ class Repository(GitHub):
 
     def create_pull_request(
         self,
-        json: dict[str, str],
+        json: dict[str, Any],
         model: str = "",
     ) -> dict[str, Any] | None:
         """Create a pull request.
