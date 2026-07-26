@@ -937,6 +937,33 @@ class Repository(GitHub):
         """
         return self.pr_has_change(pr_number=pr_number, pred=pred)
 
+    def create_issue(
+        self,
+        title: str,
+        body: str = "",
+        labels: Sequence[str] = (),
+        assignees: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """Create an issue in this repository.
+
+        :param title: The title of the new issue.
+        :param body: The Markdown body of the new issue.
+        :param labels: Names of labels to attach to the new issue. Labels that
+            do not already exist are created by GitHub. Silently dropped unless
+            the authenticated user has push access to the repository.
+        :param assignees: Logins of users to assign to the new issue. Silently
+            dropped unless the authenticated user has push access to the
+            repository.
+        """
+        json: dict[str, Any] = {"title": title}
+        if body:
+            json["body"] = body
+        if labels:
+            json["labels"] = list(labels)
+        if assignees:
+            json["assignees"] = list(assignees)
+        return self._post(url=self._url_issues, json=json).json()
+
     def get_issue_comments(self, issue_number: int, n: int = 0) -> list[dict[str, Any]]:
         """List comments on an issue in this repository.
 

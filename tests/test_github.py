@@ -106,6 +106,49 @@ def test_get_issue_comments_passes_url():
     )
 
 
+def test_create_issue_passes_url_and_payload():
+    repo = Repository("token", "owner/name")
+    response = MagicMock()
+    response.json.return_value = {"number": 7}
+    with patch.object(repo, "_post", return_value=response) as mock_post:
+        assert repo.create_issue("a title", body="a body") == {"number": 7}
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues"
+    )
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title", "body": "a body"}
+
+
+def test_create_issue_omits_empty_optional_fields():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
+        repo.create_issue("a title")
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title"}
+
+
+def test_create_issue_passes_labels_and_assignees():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
+        repo.create_issue("a title", labels=("bug",), assignees=("dclong",))
+    assert mock_post.call_args.kwargs["json"] == {
+        "title": "a title",
+        "labels": ["bug"],
+        "assignees": ["dclong"],
+    }
+
+
+def test_create_issue_reaches_requests_post():
+    """Guard against re-introducing a `timeout` kwarg that `_post` already sets.
+
+    The other tests patch `_post`, so they cannot catch a duplicate keyword
+    argument to `requests.post`.
+    """
+    repo = Repository("token", "owner/name")
+    with patch("github_rest_api.github.requests.post") as mock_post:
+        repo.create_issue("a title")
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title"}
+    assert mock_post.call_args.kwargs["timeout"] == 10
+
+
 def test_compare_url_encodes_branch_names():
     repo = Repository("token", "owner/name")
     response = MagicMock()
