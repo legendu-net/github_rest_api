@@ -20,6 +20,7 @@ from github_rest_api.pr_content import (
     deterministic_title,
     generate_pr_content,
 )
+from github_rest_api.utils import as_str_sequence
 
 logger = logging.getLogger(__name__)
 
@@ -740,6 +741,9 @@ class Repository(GitHub):
             commit checked here, so a push landing between this gate and the merge
             is rejected rather than silently merged.
         """
+        authors = as_str_sequence(authors)
+        approvers = as_str_sequence(approvers)
+        allowed_types = as_str_sequence(allowed_types)
         pr = self.get_pull_request(pr_number)
 
         def skip(reason: str) -> None:
@@ -801,6 +805,9 @@ class Repository(GitHub):
         :return: The numbers of the PRs that were merged (or, under ``dry_run``,
             that would have been merged).
         """
+        authors = as_str_sequence(authors)
+        approvers = as_str_sequence(approvers)
+        allowed_types = as_str_sequence(allowed_types)
         eligible = []
         for pr in self.get_pull_requests():
             number = pr["number"]
@@ -999,12 +1006,8 @@ class Repository(GitHub):
             single login as a bare string. Silently dropped unless the
             authenticated user has push access to the repository.
         """
-        # A bare string is a Sequence[str] of its own characters, so it would
-        # otherwise be sent as one entry per character.
-        if isinstance(labels, str):
-            labels = [labels]
-        if isinstance(assignees, str):
-            assignees = [assignees]
+        labels = as_str_sequence(labels)
+        assignees = as_str_sequence(assignees)
         json: dict[str, Any] = {"title": title}
         if body:
             json["body"] = body

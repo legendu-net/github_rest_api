@@ -12,6 +12,7 @@ from pathlib import Path
 from dulwich import porcelain
 
 from github_rest_api import Organization, User
+from github_rest_api.utils import as_str_sequence
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ def create_github_repo(
     push: bool,
     branches: Sequence[str] = ("main",),
 ) -> None:
+    branches = as_str_sequence(branches)
     token = token or os.getenv("GITHUB_TOKEN", "")
     if not token:
         token = getpass.getpass("Please enter your GitHub token: ")

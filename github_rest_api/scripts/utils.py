@@ -9,6 +9,8 @@ from typing import Any, Iterable
 from dulwich import porcelain
 from dulwich.repo import Repo
 
+from github_rest_api.utils import as_str_sequence
+
 
 def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):
     """Config Git.
@@ -89,6 +91,7 @@ def find_project_root(path: Path | None = None) -> Path | None:
 
 
 def get_toml_value(path: Path, keys: Sequence[str]) -> Any:
+    keys = as_str_sequence(keys)
     if not keys or not path.exists():
         return None
     try:

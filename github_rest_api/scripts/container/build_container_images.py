@@ -14,6 +14,8 @@ from dulwich.refs import Ref
 from dulwich.repo import Repo
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from github_rest_api.utils import as_str_sequence
+
 
 def _get_commit(name: bytes) -> bytes:
     """Resolve a commit SHA or branch name to a commit SHA string."""
@@ -69,6 +71,8 @@ def has_relevant_changes(
 ) -> bool:
     if not commit1 or not commit2:
         return True
+    image_dirs = as_str_sequence(image_dirs)
+    paths_monitoring = as_str_sequence(paths_monitoring)
     if isinstance(commit1, str):
         commit1 = commit1.encode()
     if isinstance(commit2, str):
@@ -149,6 +153,8 @@ def build_images(
     tool: str = "podman",
     registry: str = "quay.io/legendu",
 ):
+    image_dirs = as_str_sequence(image_dirs)
+    paths_monitoring = as_str_sequence(paths_monitoring)
     _validate_paths_exist(image_dirs, "image dirs")
     _validate_paths_exist(paths_monitoring, "monitored paths")
     if not has_relevant_changes(commit1, commit2, image_dirs, paths_monitoring):

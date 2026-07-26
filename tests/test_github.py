@@ -625,6 +625,43 @@ def test_should_auto_merge_all_pass():
     assert _run_should_auto_merge(repo, patches) == "abc123"
 
 
+def test_should_auto_merge_accepts_bare_string_allowlists():
+    """A bare-string allowlist is one login, not one entry per character.
+
+    Without coercion the allowlist would become a set of characters, which both
+    rejects the intended login and accepts any single-character one.
+    """
+    repo, patches = _auto_merge_repo()
+    assert (
+        _run_should_auto_merge(repo, patches, authors="bot", approvers="bot")
+        == "abc123"
+    )
+
+
+def test_should_auto_merge_bare_string_authors_rejects_single_char_login():
+    """Uncoerced, `authors="bot"` is the character set {b, o, t}, which admits `b`.
+
+    The approver allowlist is a list here so the author gate is the only one that
+    can fail.
+    """
+    repo, patches = _auto_merge_repo(
+        pr_overrides={"user": {"login": "b"}},
+        reviews=[_review("b", "APPROVED")],
+    )
+    assert _run_should_auto_merge(repo, patches, authors="bot", approvers=["b"]) is None
+
+
+def test_should_auto_merge_bare_string_approvers_rejects_single_char_login():
+    """Uncoerced, `approvers="bot"` would let `b` grant an approving review.
+
+    The author allowlist is a list here so the PR reaches the approver gate.
+    """
+    repo, patches = _auto_merge_repo(reviews=[_review("b", "APPROVED")])
+    assert (
+        _run_should_auto_merge(repo, patches, authors=["bot"], approvers="bot") is None
+    )
+
+
 def test_should_auto_merge_marker_comment_path():
     repo, patches = _auto_merge_repo(
         reviews=[],
