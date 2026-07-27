@@ -48,4 +48,5 @@ dev = [
 
 [tool.ruff]
 # select the 'I' rule set for import sorting
-lint.extend-select = [ "I" ]
+# and 'RUF022' to keep the elements of `__all__` sorted
+lint.extend-select = [ "I", "RUF022" ]
