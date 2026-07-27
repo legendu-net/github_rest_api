@@ -20,10 +20,17 @@ from github_rest_api.pr_content import (
     deterministic_title,
     generate_pr_content,
 )
+from github_rest_api.utils import as_str_sequence
 
 logger = logging.getLogger(__name__)
 
 URL_API = "https://api.github.com"
+
+# Default connect/read timeout (in seconds) for a GitHub REST API request. It is a
+# per-socket-operation deadline rather than a total-transfer one, so a slow but
+# progressing response is not cut off. Callers may pass their own `timeout` to any
+# of the request helpers, but never `None`: see `_apply_timeout`.
+DEFAULT_TIMEOUT = 10
 
 # Default LiteLLM 'provider/model' used to generate PR titles and descriptions.
 DEFAULT_PR_MODEL = "anthropic/claude-haiku-4-5-20251001"
@@ -63,6 +70,25 @@ def _validate_secret_name(name: str) -> None:
         raise ValueError(
             f"Invalid secret name {name!r}: names may only contain alphanumeric "
             "characters and underscores, and must not start with a digit."
+        )
+
+
+def _apply_timeout(kwargs: dict[str, Any]) -> None:
+    """Apply the default request timeout in place, rejecting an infinite one.
+
+    `requests` treats `timeout=None` as "wait forever", which can hang a caller
+    indefinitely on an unresponsive endpoint. No GitHub REST API call is worth
+    that, so `None` is rejected rather than silently replaced: a caller that
+    passed it meant to disable the deadline and should say what it wants instead.
+
+    :param kwargs: Keyword arguments destined for a `requests` call. A `timeout`
+        entry is added when absent; any other entry is left untouched.
+    :raises ValueError: If `timeout` is explicitly None.
+    """
+    if kwargs.setdefault("timeout", DEFAULT_TIMEOUT) is None:
+        raise ValueError(
+            "timeout=None would wait indefinitely; pass a positive number of "
+            f"seconds, or omit timeout to use the default of {DEFAULT_TIMEOUT}."
         )
 
 
@@ -284,12 +310,13 @@ class GitHub:
         :param url: The endpoint URL to request.
         :param raise_for_status: Whether to raise on a non-2xx response.
         :param kwargs: Additional keyword arguments (e.g. `params`) forwarded
-            to `requests.get`.
+            to `requests.get`. `timeout` defaults to `DEFAULT_TIMEOUT`
+            seconds and must not be None (see `_apply_timeout`).
         """
+        _apply_timeout(kwargs)
         resp = requests.get(
             url=url,
             headers=self._headers,
-            timeout=10,
             **kwargs,
         )
         if raise_for_status:
@@ -304,22 +331,37 @@ class GitHub:
         :param headers: Request headers; defaults to the standard auth headers.
         :param raise_for_status: Whether to raise on a non-2xx response.
         :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
-            to `requests.post`.
+            to `requests.post`. `timeout` defaults to `DEFAULT_TIMEOUT`
+            seconds and must not be None (see `_apply_timeout`).
         """
         if headers is None:
             headers = self._headers
+        _apply_timeout(kwargs)
         resp = requests.post(
             url=url,
             headers=headers,
-            timeout=10,
             **kwargs,
         )
         if raise_for_status:
             resp.raise_for_status()
         return resp
 
-    def _delete(self, url, raise_for_status: bool = True) -> requests.Response:
-        resp = requests.delete(url=url, headers=self._headers, timeout=10)
+    def _delete(
+        self, url, raise_for_status: bool = True, **kwargs
+    ) -> requests.Response:
+        """Send a DELETE request to a GitHub REST API endpoint.
+        :param url: The endpoint URL to request.
+        :param raise_for_status: Whether to raise on a non-2xx response.
+        :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
+            to `requests.delete`. `timeout` defaults to `DEFAULT_TIMEOUT`
+            seconds and must not be None (see `_apply_timeout`).
+        """
+        _apply_timeout(kwargs)
+        resp = requests.delete(
+            url=url,
+            headers=self._headers,
+            **kwargs,
+        )
         if raise_for_status:
             resp.raise_for_status()
         return resp
@@ -331,12 +373,13 @@ class GitHub:
         :param url: The endpoint URL to request.
         :param raise_for_status: Whether to raise on a non-2xx response.
         :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
-            to `requests.put`.
+            to `requests.put`. `timeout` defaults to `DEFAULT_TIMEOUT`
+            seconds and must not be None (see `_apply_timeout`).
         """
+        _apply_timeout(kwargs)
         resp = requests.put(
             url=url,
             headers=self._headers,
-            timeout=10,
             **kwargs,
         )
         if raise_for_status:
@@ -348,12 +391,13 @@ class GitHub:
         :param url: The endpoint URL to request.
         :param raise_for_status: Whether to raise on a non-2xx response.
         :param kwargs: Additional keyword arguments (e.g. `json`) forwarded
-            to `requests.patch`.
+            to `requests.patch`. `timeout` defaults to `DEFAULT_TIMEOUT`
+            seconds and must not be None (see `_apply_timeout`).
         """
+        _apply_timeout(kwargs)
         resp = requests.patch(
             url=url,
             headers=self._headers,
-            timeout=10,
             **kwargs,
         )
         if raise_for_status:
@@ -697,6 +741,9 @@ class Repository(GitHub):
             commit checked here, so a push landing between this gate and the merge
             is rejected rather than silently merged.
         """
+        authors = as_str_sequence(authors)
+        approvers = as_str_sequence(approvers)
+        allowed_types = as_str_sequence(allowed_types)
         pr = self.get_pull_request(pr_number)
 
         def skip(reason: str) -> None:
@@ -758,6 +805,9 @@ class Repository(GitHub):
         :return: The numbers of the PRs that were merged (or, under ``dry_run``,
             that would have been merged).
         """
+        authors = as_str_sequence(authors)
+        approvers = as_str_sequence(approvers)
+        allowed_types = as_str_sequence(allowed_types)
         eligible = []
         for pr in self.get_pull_requests():
             number = pr["number"]
@@ -937,6 +987,36 @@ class Repository(GitHub):
         """
         return self.pr_has_change(pr_number=pr_number, pred=pred)
 
+    def create_issue(
+        self,
+        title: str,
+        body: str = "",
+        labels: Sequence[str] = (),
+        assignees: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """Create an issue in this repository.
+
+        :param title: The title of the new issue.
+        :param body: The Markdown body of the new issue.
+        :param labels: Names of labels to attach to the new issue, or a single
+            name as a bare string. Silently dropped unless the authenticated
+            user has push access to the repository. Labels that do not already
+            exist are created by GitHub.
+        :param assignees: Logins of users to assign to the new issue, or a
+            single login as a bare string. Silently dropped unless the
+            authenticated user has push access to the repository.
+        """
+        labels = as_str_sequence(labels)
+        assignees = as_str_sequence(assignees)
+        json: dict[str, Any] = {"title": title}
+        if body:
+            json["body"] = body
+        if labels:
+            json["labels"] = list(labels)
+        if assignees:
+            json["assignees"] = list(assignees)
+        return self._post(url=self._url_issues, json=json).json()
+
     def get_issue_comments(self, issue_number: int, n: int = 0) -> list[dict[str, Any]]:
         """List comments on an issue in this repository.
 
@@ -954,7 +1034,6 @@ class Repository(GitHub):
         return self._post(
             url=f"{self._url_issues}/{issue_number}/comments",
             json={"body": body},
-            timeout=10,
         ).json()
 
     def archive(self) -> requests.Response:

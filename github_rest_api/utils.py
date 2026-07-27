@@ -14,6 +14,25 @@ def partition(pred, iterable):
     return filter(pred, it1), filterfalse(pred, it2)
 
 
+def as_str_sequence(value: str | Sequence[str]) -> Sequence[str]:
+    """Wrap a bare string into a one-element sequence, leaving others untouched.
+
+    A `str` is itself a `Sequence[str]` of its own characters, so a caller who
+    passes a single value where a collection is expected is silently exploded
+    into one entry per character. No type checker flags this, because the
+    annotation really is satisfied.
+
+    An empty string yields an empty sequence rather than `[""]`, so a caller
+    passing an unset optional (from `os.getenv`, a config field or an argparse
+    default) keeps meaning "nothing" instead of "one empty entry".
+
+    :param value: A sequence of strings, or a single string.
+    """
+    if isinstance(value, str):
+        return [value] if value else []
+    return value
+
+
 def compile_patterns(patterns: str | Sequence[str] | None) -> list[re.Pattern[str]]:
     """Compile a list of regular expression patterns.
 

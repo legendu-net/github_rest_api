@@ -9,6 +9,7 @@ import requests
 from nacl import encoding, public
 
 from github_rest_api.github import (
+    DEFAULT_TIMEOUT,
     MergeMethod,
     Organization,
     Repository,
@@ -87,6 +88,46 @@ def test_repository_get_branch():
     assert branch["name"] == "main"
 
 
+_HTTP_HELPERS = [
+    ("_get", "get"),
+    ("_post", "post"),
+    ("_put", "put"),
+    ("_patch", "patch"),
+    ("_delete", "delete"),
+]
+
+
+@pytest.mark.parametrize(("method", "verb"), _HTTP_HELPERS)
+def test_http_helper_defaults_timeout(method, verb):
+    repo = Repository("token", "owner/name")
+    with patch(f"github_rest_api.github.requests.{verb}") as mock_request:
+        getattr(repo, method)(url="https://api.github.com/x")
+    assert mock_request.call_args.kwargs["timeout"] == DEFAULT_TIMEOUT
+
+
+@pytest.mark.parametrize(("method", "verb"), _HTTP_HELPERS)
+def test_http_helper_honors_caller_timeout(method, verb):
+    """A caller-supplied `timeout` overrides the default instead of colliding."""
+    repo = Repository("token", "owner/name")
+    with patch(f"github_rest_api.github.requests.{verb}") as mock_request:
+        getattr(repo, method)(url="https://api.github.com/x", timeout=30)
+    assert mock_request.call_args.kwargs["timeout"] == 30
+
+
+@pytest.mark.parametrize(("method", "verb"), _HTTP_HELPERS)
+def test_http_helper_rejects_timeout_none(method, verb):
+    """`timeout=None` is rejected before the request is sent, never forwarded.
+
+    `requests` reads None as "wait forever", so it is refused rather than
+    silently replaced by the default.
+    """
+    repo = Repository("token", "owner/name")
+    with patch(f"github_rest_api.github.requests.{verb}") as mock_request:
+        with pytest.raises(ValueError, match="timeout=None"):
+            getattr(repo, method)(url="https://api.github.com/x", timeout=None)
+    mock_request.assert_not_called()
+
+
 def test_get_issues_passes_url_and_state():
     repo = Repository("token", "owner/name")
     with patch.object(repo, "_extract_all", return_value=[]) as mock_extract:
@@ -104,6 +145,71 @@ def test_get_issue_comments_passes_url():
     assert mock_extract.call_args.kwargs["url"] == (
         "https://api.github.com/repos/owner/name/issues/7/comments"
     )
+
+
+def test_create_issue_passes_url_and_payload():
+    repo = Repository("token", "owner/name")
+    response = MagicMock()
+    response.json.return_value = {"number": 7}
+    with patch.object(repo, "_post", return_value=response) as mock_post:
+        assert repo.create_issue("a title", body="a body") == {"number": 7}
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues"
+    )
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title", "body": "a body"}
+
+
+def test_create_issue_omits_empty_optional_fields():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
+        repo.create_issue("a title")
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title"}
+
+
+def test_create_issue_accepts_bare_string_labels_and_assignees():
+    """A bare string is one label/assignee, not one per character."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
+        repo.create_issue("a title", labels="bug", assignees="dclong")
+    assert mock_post.call_args.kwargs["json"] == {
+        "title": "a title",
+        "labels": ["bug"],
+        "assignees": ["dclong"],
+    }
+
+
+def test_create_issue_passes_labels_and_assignees():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
+        repo.create_issue("a title", labels=("bug",), assignees=("dclong",))
+    assert mock_post.call_args.kwargs["json"] == {
+        "title": "a title",
+        "labels": ["bug"],
+        "assignees": ["dclong"],
+    }
+
+
+def test_create_issue_reaches_requests_post():
+    """Check the request reaching `requests.post`, not just the `_post` call.
+
+    The other tests patch `_post`, so they cannot catch a malformed call to
+    `requests.post` itself.
+    """
+    repo = Repository("token", "owner/name")
+    with patch("github_rest_api.github.requests.post") as mock_post:
+        repo.create_issue("a title")
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title"}
+
+
+def test_create_issue_comment_reaches_requests_post():
+    """See `test_create_issue_reaches_requests_post` for why this layer."""
+    repo = Repository("token", "owner/name")
+    with patch("github_rest_api.github.requests.post") as mock_post:
+        repo.create_issue_comment(7, "a comment")
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/comments"
+    )
+    assert mock_post.call_args.kwargs["json"] == {"body": "a comment"}
 
 
 def test_compare_url_encodes_branch_names():
@@ -517,6 +623,43 @@ def test_should_auto_merge_all_pass():
     repo, patches = _auto_merge_repo()
     # On eligibility, the validated head SHA is returned (head.sha in _auto_merge_repo).
     assert _run_should_auto_merge(repo, patches) == "abc123"
+
+
+def test_should_auto_merge_accepts_bare_string_allowlists():
+    """A bare-string allowlist is one login, not one entry per character.
+
+    Without coercion the allowlist would become a set of characters, which both
+    rejects the intended login and accepts any single-character one.
+    """
+    repo, patches = _auto_merge_repo()
+    assert (
+        _run_should_auto_merge(repo, patches, authors="bot", approvers="bot")
+        == "abc123"
+    )
+
+
+def test_should_auto_merge_bare_string_authors_rejects_single_char_login():
+    """Uncoerced, `authors="bot"` is the character set {b, o, t}, which admits `b`.
+
+    The approver allowlist is a list here so the author gate is the only one that
+    can fail.
+    """
+    repo, patches = _auto_merge_repo(
+        pr_overrides={"user": {"login": "b"}},
+        reviews=[_review("b", "APPROVED")],
+    )
+    assert _run_should_auto_merge(repo, patches, authors="bot", approvers=["b"]) is None
+
+
+def test_should_auto_merge_bare_string_approvers_rejects_single_char_login():
+    """Uncoerced, `approvers="bot"` would let `b` grant an approving review.
+
+    The author allowlist is a list here so the PR reaches the approver gate.
+    """
+    repo, patches = _auto_merge_repo(reviews=[_review("b", "APPROVED")])
+    assert (
+        _run_should_auto_merge(repo, patches, authors=["bot"], approvers="bot") is None
+    )
 
 
 def test_should_auto_merge_marker_comment_path():
