@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dulwich import porcelain
+from dulwich.refs import HEADREF
 
 from github_rest_api import Organization, User
 from github_rest_api.utils import as_str_sequence
@@ -56,10 +57,19 @@ def _active_branch(path: Path) -> str:
         return porcelain.active_branch(path).decode()
     except (IndexError, ValueError) as e:
         raise ValueError(
-            f"HEAD of the local repo at '{path}' is detached (not on any branch), "
-            "which is unsupported (this happens, e.g., with a colocated Jujutsu repo). "
+            f"Cannot determine the initial branch of the local repo at '{path}' "
+            "as HEAD does not point at a branch. "
             "Check out a branch (e.g. `git switch -c main`) before running this command."
         ) from e
+
+
+def _head_commit(path: Path) -> str | None:
+    """Resolve HEAD to a commit SHA, or None if HEAD does not resolve to one."""
+    with porcelain.open_repo_closing(path) as repo:
+        try:
+            return repo.refs[HEADREF].decode()
+        except KeyError:
+            return None
 
 
 def _init_local_repo(
@@ -84,7 +94,9 @@ def _init_local_repo(
     if not (path / ".git").exists():
         porcelain.init(path=path)
         logger.info("Initialized empty Git repository in %s", path)
-    if not porcelain.branch_list(path):
+    head = _head_commit(path)
+    if head is None and not porcelain.branch_list(path):
+        # A brand new repository: no commit and no branch yet.
         initial_branch = _active_branch(path)
         porcelain.add(repo=path, paths=["README.md"])
         logger.info("Added README.md to staging")
@@ -101,9 +113,13 @@ def _init_local_repo(
             logger.info("Deleted initial branch '%s'", initial_branch)
     else:
         existing_branches = {b.decode() for b in porcelain.branch_list(path)}
+        # Point new branches at HEAD's commit explicitly. Dulwich fails to resolve
+        # its default "HEAD" objectish when HEAD is detached, which is the normal
+        # state of a colocated Jujutsu repository. (When HEAD is unborn, head is
+        # None and dulwich falls back to that "HEAD" default.)
         for branch in branches:
             if branch not in existing_branches:
-                porcelain.branch_create(repo=path, name=branch)
+                porcelain.branch_create(repo=path, name=branch, objectish=head)
                 logger.info("Created branch '%s' from HEAD", branch)
     _ensure_remote(path, repo, protocol)
     if push:
