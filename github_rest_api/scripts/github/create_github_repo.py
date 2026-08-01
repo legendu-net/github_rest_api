@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dulwich import porcelain
-from dulwich.refs import HEADREF
+from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, Ref
 
 from github_rest_api import Organization, User
 from github_rest_api.utils import as_str_sequence
@@ -63,13 +63,19 @@ def _active_branch(path: Path) -> str:
         ) from e
 
 
-def _head_commit(path: Path) -> str | None:
-    """Resolve HEAD to a commit SHA, or None if HEAD does not resolve to one."""
+def _head_and_branches(path: Path) -> tuple[str | None, set[str]]:
+    """Resolve HEAD and the local branches with a single open of the repo.
+
+    Returns the commit SHA HEAD points at (None if it does not resolve to one)
+    and the existing local branch names (without the `refs/heads/` prefix).
+    """
     with porcelain.open_repo_closing(path) as repo:
         try:
-            return repo.refs[HEADREF].decode()
+            head = repo.refs[HEADREF].decode()
         except KeyError:
-            return None
+            head = None
+        branches = {b.decode() for b in repo.refs.keys(base=Ref(LOCAL_BRANCH_PREFIX))}
+    return head, branches
 
 
 def _init_local_repo(
@@ -94,8 +100,8 @@ def _init_local_repo(
     if not (path / ".git").exists():
         porcelain.init(path=path)
         logger.info("Initialized empty Git repository in %s", path)
-    head = _head_commit(path)
-    if head is None and not porcelain.branch_list(path):
+    head, existing_branches = _head_and_branches(path)
+    if head is None and not existing_branches:
         # A brand new repository: no commit and no branch yet.
         initial_branch = _active_branch(path)
         porcelain.add(repo=path, paths=["README.md"])
@@ -112,15 +118,28 @@ def _init_local_repo(
             porcelain.branch_delete(repo=path, name=initial_branch)
             logger.info("Deleted initial branch '%s'", initial_branch)
     else:
-        existing_branches = {b.decode() for b in porcelain.branch_list(path)}
+        missing = [b for b in branches if b not in existing_branches]
+        if missing and head is None:
+            # HEAD is unborn (e.g. after `git switch --orphan`) but branches
+            # already exist, so there is no commit to branch from. Without this,
+            # dulwich falls back to its "HEAD" objectish default and fails deep
+            # inside the object store with "Invalid object name b'HEAD'".
+            # `existing_branches` is never empty here: an empty one with a None
+            # head takes the brand-new-repository path above.
+            raise ValueError(
+                "Cannot create the branch(es) "
+                f"{', '.join(repr(b) for b in missing)} in the local repo at "
+                f"'{path}' as HEAD does not point at a commit to branch from. "
+                f"Check out an existing branch (e.g. "
+                f"`git switch {sorted(existing_branches)[0]}`) "
+                "before running this command."
+            )
         # Point new branches at HEAD's commit explicitly. Dulwich fails to resolve
         # its default "HEAD" objectish when HEAD is detached, which is the normal
-        # state of a colocated Jujutsu repository. (When HEAD is unborn, head is
-        # None and dulwich falls back to that "HEAD" default.)
-        for branch in branches:
-            if branch not in existing_branches:
-                porcelain.branch_create(repo=path, name=branch, objectish=head)
-                logger.info("Created branch '%s' from HEAD", branch)
+        # state of a colocated Jujutsu repository.
+        for branch in missing:
+            porcelain.branch_create(repo=path, name=branch, objectish=head)
+            logger.info("Created branch '%s' from HEAD", branch)
     _ensure_remote(path, repo, protocol)
     if push:
         for branch in branches:

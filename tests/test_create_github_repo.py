@@ -57,6 +57,19 @@ def _detached_repo(dir_: Path, keep_branch: bool) -> bytes:
     return head
 
 
+def _orphan_head_repo(dir_: Path) -> None:
+    """Build a repo with a branch but an unborn HEAD, as `git switch --orphan` does."""
+    dir_.mkdir()
+    porcelain.init(path=dir_)
+    (dir_ / "code.py").write_text("print('hello')\n")
+    porcelain.add(repo=dir_, paths=["code.py"])
+    porcelain.commit(repo=dir_, message="first commit")
+    initial_branch = porcelain.active_branch(dir_).decode()
+    porcelain.branch_create(repo=dir_, name=KEPT_BRANCH)
+    (dir_ / ".git" / "HEAD").write_bytes(b"ref: refs/heads/orphan\n")
+    porcelain.branch_delete(repo=dir_, name=initial_branch)
+
+
 def test_init_local_repo_from_scratch(tmp_path):
     dir_ = tmp_path / "repo"
     _init_local(dir_, branches=("main", "dev"))
@@ -92,3 +105,24 @@ def test_init_local_repo_with_detached_head_and_existing_branch(tmp_path):
         assert repo.refs[b"refs/heads/main"] == head
         assert repo.refs[b"refs/heads/" + KEPT_BRANCH.encode()] == head
     assert _head(dir_) == head
+
+
+def test_init_local_repo_with_unborn_head_and_existing_branch(tmp_path):
+    dir_ = tmp_path / "repo"
+    _orphan_head_repo(dir_)
+    assert _branches(dir_) == {KEPT_BRANCH}
+
+    with pytest.raises(ValueError, match="HEAD does not point at a commit"):
+        _init_local(dir_, branches=("main",))
+
+    assert _branches(dir_) == {KEPT_BRANCH}
+
+
+def test_init_local_repo_with_unborn_head_and_nothing_to_create(tmp_path):
+    """An unborn HEAD is fine as long as every requested branch already exists."""
+    dir_ = tmp_path / "repo"
+    _orphan_head_repo(dir_)
+
+    _init_local(dir_, branches=(KEPT_BRANCH,))
+
+    assert _branches(dir_) == {KEPT_BRANCH}
