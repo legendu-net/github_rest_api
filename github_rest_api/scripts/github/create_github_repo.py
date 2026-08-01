@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dulwich import porcelain
-from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, Ref
+from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX
 
 from github_rest_api import Organization, User
 from github_rest_api.utils import as_str_sequence
@@ -74,7 +74,7 @@ def _head_and_branches(path: Path) -> tuple[str | None, set[str]]:
             head = repo.refs[HEADREF].decode()
         except KeyError:
             head = None
-        branches = {b.decode() for b in repo.refs.keys(base=Ref(LOCAL_BRANCH_PREFIX))}
+        branches = {b.decode() for b in repo.refs.keys(base=LOCAL_BRANCH_PREFIX)}
     return head, branches
 
 
