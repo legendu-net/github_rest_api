@@ -70,8 +70,9 @@ def parse_args(args=None, namespace=None) -> Namespace:
     parser.add_argument(
         "--merge-method",
         dest="merge_method",
-        choices=[m.value for m in MergeMethod],
-        default=MergeMethod.MERGE.value,
+        type=MergeMethod,
+        choices=list(MergeMethod),
+        default=MergeMethod.MERGE,
         help="The merge method to use.",
     )
     parser.add_argument(

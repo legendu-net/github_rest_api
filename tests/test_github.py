@@ -2,6 +2,7 @@ import os
 from base64 import b64decode
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,6 +11,8 @@ from nacl import encoding, public
 
 from github_rest_api.github import (
     DEFAULT_TIMEOUT,
+    IssueState,
+    IssueStateReason,
     MergeMethod,
     Organization,
     Repository,
@@ -210,6 +213,472 @@ def test_create_issue_comment_reaches_requests_post():
         "https://api.github.com/repos/owner/name/issues/7/comments"
     )
     assert mock_post.call_args.kwargs["json"] == {"body": "a comment"}
+
+
+def test_create_issue_passes_milestone():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
+        repo.create_issue("a title", milestone=3)
+    assert mock_post.call_args.kwargs["json"] == {"title": "a title", "milestone": 3}
+
+
+def test_get_issue_passes_url():
+    repo = Repository("token", "owner/name")
+    response = MagicMock()
+    response.json.return_value = {"number": 7}
+    with patch.object(repo, "_get", return_value=response) as mock_get:
+        assert repo.get_issue(7) == {"number": 7}
+    assert mock_get.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7"
+    )
+
+
+def _mock_helper(repo, method, payload=None):
+    """Patch an HTTP helper of `repo` so its response decodes to `payload`."""
+    response = MagicMock()
+    response.json.return_value = payload
+    return patch.object(repo, method, return_value=response)
+
+
+def test_update_issue_sends_only_given_fields_and_returns_json():
+    """An unmentioned field is left out entirely, never nulled or re-sent."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch", {"number": 7}) as mock_patch:
+        assert repo.update_issue(7, title="new title") == {"number": 7}
+    assert mock_patch.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7"
+    )
+    assert mock_patch.call_args.kwargs["json"] == {"title": "new title"}
+
+
+def test_update_issue_sends_empty_body():
+    """`body=""` empties the body; it must not be dropped as falsy."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, body="")
+    assert mock_patch.call_args.kwargs["json"] == {"body": ""}
+
+
+def test_update_issue_clears_milestone_with_none():
+    """`milestone=None` detaches the milestone, distinct from omitting it."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, milestone=None)
+    assert mock_patch.call_args.kwargs["json"] == {"milestone": None}
+
+
+def test_update_issue_clears_labels_and_assignees_with_empty_sequence():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, labels=(), assignees=())
+    assert mock_patch.call_args.kwargs["json"] == {"labels": [], "assignees": []}
+
+
+def test_update_issue_accepts_bare_string_labels_and_assignees():
+    """A bare string is one label/assignee, not one per character."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, labels="bug", assignees="dclong")
+    assert mock_patch.call_args.kwargs["json"] == {
+        "labels": ["bug"],
+        "assignees": ["dclong"],
+    }
+
+
+def test_update_issue_serializes_enum_values():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(
+            7, state=IssueState.CLOSED, state_reason=IssueStateReason.NOT_PLANNED
+        )
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "closed",
+        "state_reason": "not_planned",
+    }
+
+
+def test_update_issue_sends_null_state_reason():
+    """`state_reason=None` reaches GitHub as JSON null, not as an omitted key."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, state=IssueState.OPEN, state_reason=None)
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "open",
+        "state_reason": None,
+    }
+
+
+@pytest.mark.parametrize("state_reason", [None, IssueStateReason.NOT_PLANNED])
+def test_update_issue_rejects_state_reason_without_state(state_reason):
+    """GitHub ignores `state_reason` unless `state` changes, so it is refused.
+
+    Sending it alone would look like an update but silently do nothing.
+    """
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="state_reason is ignored"):
+            repo.update_issue(7, state_reason=state_reason)
+    mock_patch.assert_not_called()
+
+
+def test_update_issue_passes_duplicate_issue_id():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(
+            7,
+            state=IssueState.CLOSED,
+            state_reason=IssueStateReason.DUPLICATE,
+            duplicate_issue_id=98765,
+        )
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "closed",
+        "state_reason": "duplicate",
+        "duplicate_issue_id": 98765,
+    }
+
+
+def test_update_issue_accepts_duplicate_as_bare_string():
+    """The pairing check compares by value, so a plain string works too.
+
+    The signature names the enums, but a state read from JSON or a command line
+    arrives as a plain string; the checks stay value-based so it still works.
+    Hence the deliberately untyped arguments below.
+    """
+    repo = Repository("token", "owner/name")
+    # Passed as untyped keywords, the way such a value reaches the call in
+    # practice; spelling them out inline would just be a type error.
+    untyped: dict[str, Any] = {"state": "closed", "state_reason": "duplicate"}
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, duplicate_issue_id=98765, **untyped)
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "closed",
+        "state_reason": "duplicate",
+        "duplicate_issue_id": 98765,
+    }
+
+
+def test_update_issue_omits_duplicate_issue_id_by_default():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue(7, title="t")
+    assert "duplicate_issue_id" not in mock_patch.call_args.kwargs["json"]
+
+
+def test_update_issue_requires_duplicate_issue_id_for_duplicate():
+    """GitHub 422s on `duplicate` without the id, so it is caught early."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="requires duplicate_issue_id"):
+            repo.update_issue(
+                7, state=IssueState.CLOSED, state_reason=IssueStateReason.DUPLICATE
+            )
+    mock_patch.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"title": "t"},
+        {"state": IssueState.CLOSED, "state_reason": IssueStateReason.NOT_PLANNED},
+        {"state": IssueState.OPEN, "state_reason": None},
+    ],
+)
+def test_update_issue_rejects_duplicate_issue_id_without_duplicate(kwargs):
+    """GitHub drops the id unless the reason is `duplicate`, so it is refused.
+
+    Sending it regardless would look like it took effect when it did not.
+    """
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="duplicate_issue_id is ignored"):
+            repo.update_issue(7, duplicate_issue_id=98765, **kwargs)
+    mock_patch.assert_not_called()
+
+
+def test_close_issue_as_duplicate_without_id_raises():
+    """`close_issue` inherits the pairing checks from `update_issue`."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="requires duplicate_issue_id"):
+            repo.close_issue(7, IssueStateReason.DUPLICATE)
+    mock_patch.assert_not_called()
+
+
+def test_update_issue_without_fields_raises():
+    """A field-less update would be a wasted request, so it is refused."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="No field to update"):
+            repo.update_issue(7)
+    mock_patch.assert_not_called()
+
+
+@pytest.mark.parametrize("state", [IssueState.ALL, "reopened", ""])
+def test_update_issue_rejects_invalid_state(state):
+    """`all` is a listing filter, not a state an issue can be set to."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="Invalid issue state"):
+            repo.update_issue(7, state=state)
+    mock_patch.assert_not_called()
+
+
+def test_close_issue_defaults_to_completed():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.close_issue(7)
+    assert mock_patch.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7"
+    )
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "closed",
+        "state_reason": "completed",
+    }
+
+
+def test_close_issue_passes_state_reason():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.close_issue(7, IssueStateReason.NOT_PLANNED)
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "closed",
+        "state_reason": "not_planned",
+    }
+
+
+def test_close_issue_as_duplicate_passes_duplicate_issue_id():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.close_issue(7, IssueStateReason.DUPLICATE, duplicate_issue_id=98765)
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "closed",
+        "state_reason": "duplicate",
+        "duplicate_issue_id": 98765,
+    }
+
+
+def test_reopen_issue_payload():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.reopen_issue(7)
+    assert mock_patch.call_args.kwargs["json"] == {
+        "state": "open",
+        "state_reason": "reopened",
+    }
+
+
+def test_update_issue_comment_targets_comment_id():
+    """Comments are edited by comment id, not by the issue number."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_issue_comment(4321, "edited")
+    assert mock_patch.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/comments/4321"
+    )
+    assert mock_patch.call_args.kwargs["json"] == {"body": "edited"}
+
+
+def test_delete_issue_comment_targets_comment_id():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_delete", return_value=MagicMock()) as mock_delete:
+        repo.delete_issue_comment(4321)
+    assert mock_delete.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/comments/4321"
+    )
+
+
+def test_get_issue_labels_passes_url_and_limit():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_extract_all", return_value=[]) as mock_extract:
+        repo.get_issue_labels(7, n=5)
+    assert mock_extract.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/labels"
+    )
+    assert mock_extract.call_args.kwargs["n"] == 5
+
+
+def test_add_issue_labels_posts_to_issue_labels():
+    repo = Repository("token", "owner/name")
+    labels = [{"name": "bug"}, {"name": "wontfix"}]
+    with _mock_helper(repo, "_post", labels) as mock_post:
+        assert repo.add_issue_labels(7, ("bug", "wontfix")) == labels
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/labels"
+    )
+    assert mock_post.call_args.kwargs["json"] == {"labels": ["bug", "wontfix"]}
+
+
+@pytest.mark.parametrize("labels", [(), "", []])
+def test_add_issue_labels_rejects_empty(labels):
+    """GitHub 422s on an empty `labels` array, so it is caught before the request.
+
+    A bare `""` (an unset env var or config field) reaches here as an empty
+    sequence, which is the case most likely to hit this in practice.
+    """
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_post") as mock_post:
+        with pytest.raises(ValueError, match="No label to add"):
+            repo.add_issue_labels(7, labels)
+    mock_post.assert_not_called()
+
+
+def test_set_issue_labels_puts_to_issue_labels():
+    """PUT replaces the label set, so an empty list clears every label."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_put") as mock_put:
+        repo.set_issue_labels(7, ())
+    assert mock_put.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/labels"
+    )
+    assert mock_put.call_args.kwargs["json"] == {"labels": []}
+
+
+@pytest.mark.parametrize(
+    ("labels", "method", "helper"),
+    [
+        ("bug", "add_issue_labels", "_post"),
+        ("bug", "set_issue_labels", "_put"),
+    ],
+)
+def test_issue_labels_accept_bare_string(labels, method, helper):
+    """A bare string is one label, not one per character."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, helper) as mock_request:
+        getattr(repo, method)(7, labels)
+    assert mock_request.call_args.kwargs["json"] == {"labels": ["bug"]}
+
+
+def test_remove_issue_label_url_encodes_name_and_returns_remaining():
+    """A label name may contain spaces or slashes, so it is encoded."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_delete", [{"name": "bug"}]) as mock_delete:
+        assert repo.remove_issue_label(7, "good first issue") == [{"name": "bug"}]
+    assert mock_delete.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/labels/good%20first%20issue"
+    )
+
+
+def test_add_issue_assignees_posts_to_assignees():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_post") as mock_post:
+        repo.add_issue_assignees(7, "dclong")
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/assignees"
+    )
+    assert mock_post.call_args.kwargs["json"] == {"assignees": ["dclong"]}
+
+
+def test_remove_issue_assignees_deletes_with_body():
+    """The unassign endpoint takes the logins in the DELETE body."""
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_delete", {"number": 7}) as mock_delete:
+        assert repo.remove_issue_assignees(7, ("dclong", "other")) == {"number": 7}
+    assert mock_delete.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/assignees"
+    )
+    assert mock_delete.call_args.kwargs["json"] == {"assignees": ["dclong", "other"]}
+
+
+def test_get_milestones_passes_url_state_and_limit():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_extract_all", return_value=[]) as mock_extract:
+        repo.get_milestones(n=5)
+    assert mock_extract.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/milestones"
+    )
+    assert mock_extract.call_args.kwargs["params"] == {"state": "open"}
+    assert mock_extract.call_args.kwargs["n"] == 5
+
+
+def test_create_milestone_omits_empty_optional_fields():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_post") as mock_post:
+        repo.create_milestone("v1.0")
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/milestones"
+    )
+    assert mock_post.call_args.kwargs["json"] == {"title": "v1.0"}
+
+
+def test_create_milestone_passes_optional_fields():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_post") as mock_post:
+        repo.create_milestone(
+            "v1.0", description="first", due_on="2026-12-31T00:00:00Z"
+        )
+    assert mock_post.call_args.kwargs["json"] == {
+        "title": "v1.0",
+        "description": "first",
+        "due_on": "2026-12-31T00:00:00Z",
+    }
+
+
+def test_update_milestone_sends_only_given_fields():
+    repo = Repository("token", "owner/name")
+    with _mock_helper(repo, "_patch") as mock_patch:
+        repo.update_milestone(3, state=IssueState.CLOSED)
+    assert mock_patch.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/milestones/3"
+    )
+    assert mock_patch.call_args.kwargs["json"] == {"state": "closed"}
+
+
+def test_update_milestone_without_fields_raises():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="No field to update"):
+            repo.update_milestone(3)
+    mock_patch.assert_not_called()
+
+
+def test_update_milestone_rejects_invalid_state():
+    """The error names the milestone, and renders the enum as its plain value."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="Invalid milestone state 'all'"):
+            repo.update_milestone(3, state=IssueState.ALL)
+    mock_patch.assert_not_called()
+
+
+def test_update_milestone_rejects_empty_due_on():
+    """GitHub takes no null due date, so an empty one is a 422 caught early."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_patch") as mock_patch:
+        with pytest.raises(ValueError, match="due_on must be"):
+            repo.update_milestone(3, due_on="")
+    mock_patch.assert_not_called()
+
+
+def test_delete_milestone_passes_url():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_delete", return_value=MagicMock()) as mock_delete:
+        repo.delete_milestone(3)
+    assert mock_delete.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/milestones/3"
+    )
+
+
+def test_get_pull_request_review_comments_passes_url_and_limit():
+    """The line-anchored comments live under /pulls/{n}/comments, not /issues."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "_extract_all", return_value=[]) as mock_extract:
+        repo.get_pull_request_review_comments(7, n=5)
+    assert mock_extract.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/pulls/7/comments"
+    )
+    assert mock_extract.call_args.kwargs["n"] == 5
+
+
+def test_get_pull_request_review_comments_paginates():
+    """All pages are collected, so a long review is not truncated at 100."""
+    repo = Repository("token", "owner/name")
+    full_page, last_page = MagicMock(), MagicMock()
+    full_page.json.return_value = [{"id": i} for i in range(100)]
+    last_page.json.return_value = [{"id": 100}]
+    with patch.object(repo, "_get", side_effect=[full_page, last_page]) as mock_get:
+        comments = repo.get_pull_request_review_comments(7)
+    assert len(comments) == 101
+    assert mock_get.call_count == 2
 
 
 def test_compare_url_encodes_branch_names():

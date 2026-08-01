@@ -442,10 +442,54 @@ class IssueState(StrEnum):
     ALL = "all"
 
 
+class IssueStateReason(StrEnum):
+    """Why an issue was closed or reopened, accompanying an ``IssueState``."""
+
+    COMPLETED = "completed"
+    NOT_PLANNED = "not_planned"
+    DUPLICATE = "duplicate"
+    REOPENED = "reopened"
+
+
 class MergeMethod(StrEnum):
     MERGE = "merge"
     SQUASH = "squash"
     REBASE = "rebase"
+
+
+class Unset:
+    """The type of :data:`UNSET`."""
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+# Sentinel marking an update field the caller did not mention, so that a field
+# left out is distinguishable from one explicitly set to an empty/null value.
+# `None` cannot serve as that marker because GitHub gives it a meaning of its
+# own: `{"milestone": None}` detaches the milestone, while omitting the key
+# leaves it alone. See `Repository.update_issue`.
+UNSET = Unset()
+
+
+def _validate_issue_state(state: str, noun: str = "issue") -> None:
+    """Validate a state an issue or milestone can be *set* to.
+
+    ``IssueState.ALL`` is a filter for listing, not a state anything can hold;
+    GitHub rejects it with a 422. It is caught here so the mistake is reported
+    against the argument rather than as an opaque HTTP error.
+
+    :param state: The state to set (``open`` or ``closed``).
+    :param noun: What is being updated, for the error message.
+    :raises ValueError: If the state is anything other than open or closed.
+    """
+    if state not in (IssueState.OPEN, IssueState.CLOSED):
+        # `str(state)` so a StrEnum renders as 'all' rather than
+        # <IssueState.ALL: 'all'>, matching how a plain string argument reads.
+        raise ValueError(
+            f"Invalid {noun} state {str(state)!r}: a {noun} can only be set to "
+            f"'{IssueState.OPEN}' or '{IssueState.CLOSED}'."
+        )
 
 
 class Repository(GitHub):
@@ -465,6 +509,10 @@ class Repository(GitHub):
         self._url_branches = f"{self._url_repo}/branches"
         self._url_refs = f"{self._url_repo}/git/refs"
         self._url_issues = f"{self._url_repo}/issues"
+        # Issue comments are edited/deleted by comment id, not issue number, so
+        # this endpoint is not nested under a specific issue.
+        self._url_issue_comments = f"{self._url_issues}/comments"
+        self._url_milestones = f"{self._url_repo}/milestones"
         self._url_releases = f"{self._url_repo}/releases"
         self._url_secrets = f"{self._url_repo}/actions/secrets"
         self._url_compare = f"{self._url_repo}/compare"
@@ -548,6 +596,28 @@ class Repository(GitHub):
         :param n: The maximum number of reviews to return (0 means all).
         """
         return self._extract_all(url=f"{self._url_pull}/{pr_number}/reviews", n=n)
+
+    def get_pull_request_review_comments(
+        self, pr_number: int, n: int = 0
+    ) -> list[dict[str, Any]]:
+        """List the review comments on a pull request.
+
+        These are the line-anchored comments left on the diff, each carrying
+        ``path``, ``line``/``original_line`` and ``diff_hunk``, and grouped into
+        threads via ``in_reply_to_id``. They are a different resource from the
+        conversation-level comments returned by ``get_issue_comments``, which the
+        pull request shares with its issue; a full picture of a PR's discussion
+        needs both.
+
+        Every review comment is listed, whether it belongs to a submitted review
+        or was posted as a standalone comment. Comments still pending in an
+        unsubmitted review are not visible to anyone but their author, so they
+        are absent.
+
+        :param pr_number: The number of the pull request.
+        :param n: The maximum number of review comments to return (0 means all).
+        """
+        return self._extract_all(url=f"{self._url_pull}/{pr_number}/comments", n=n)
 
     def get_issues(
         self, state: IssueState = IssueState.OPEN, n: int = 0
@@ -642,7 +712,7 @@ class Repository(GitHub):
     def merge_pull_request(
         self,
         pr_number: int,
-        merge_method: MergeMethod | str = MergeMethod.MERGE,
+        merge_method: MergeMethod = MergeMethod.MERGE,
         sha: str = "",
     ) -> dict[str, Any]:
         """Merge a pull request in this repository.
@@ -706,9 +776,9 @@ class Repository(GitHub):
         self,
         pr_number: int,
         *,
-        authors: Sequence[str],
-        approvers: Sequence[str],
-        allowed_types: Sequence[str] = DEFAULT_AUTO_MERGE_TYPES,
+        authors: str | Sequence[str],
+        approvers: str | Sequence[str],
+        allowed_types: str | Sequence[str] = DEFAULT_AUTO_MERGE_TYPES,
         min_age_minutes: int = DEFAULT_MIN_AGE_MINUTES,
         marker: str = DEFAULT_AUTO_MERGE_MARKER,
     ) -> str | None:
@@ -731,9 +801,12 @@ class Repository(GitHub):
         the first failure so extra requests are avoided.
 
         :param pr_number: The number of the pull request.
-        :param authors: Logins whose PRs are eligible for auto-merge.
-        :param approvers: Logins whose reviews/marker comments grant approval.
-        :param allowed_types: Conventional-Commits title types eligible for auto-merge.
+        :param authors: Logins whose PRs are eligible for auto-merge, or a
+            single login as a bare string.
+        :param approvers: Logins whose reviews/marker comments grant approval,
+            or a single login as a bare string.
+        :param allowed_types: Conventional-Commits title types eligible for
+            auto-merge, or a single type as a bare string.
         :param min_age_minutes: The minimum head-commit age in minutes.
         :param marker: The marker substring an approver may comment to approve.
         :return: The validated head SHA when the PR is eligible, else ``None``.
@@ -782,20 +855,23 @@ class Repository(GitHub):
     def auto_merge_pull_requests(
         self,
         *,
-        authors: Sequence[str],
-        approvers: Sequence[str],
-        allowed_types: Sequence[str] = DEFAULT_AUTO_MERGE_TYPES,
+        authors: str | Sequence[str],
+        approvers: str | Sequence[str],
+        allowed_types: str | Sequence[str] = DEFAULT_AUTO_MERGE_TYPES,
         min_age_minutes: int = DEFAULT_MIN_AGE_MINUTES,
         marker: str = DEFAULT_AUTO_MERGE_MARKER,
-        merge_method: MergeMethod | str = MergeMethod.MERGE,
+        merge_method: MergeMethod = MergeMethod.MERGE,
         dry_run: bool = False,
     ) -> list[int]:
         """Auto-merge every open pull request that passes ``should_auto_merge``.
 
-        :param authors: Logins whose PRs are eligible for auto-merge. An empty
-            allowlist makes nothing eligible (fail-safe).
-        :param approvers: Logins whose reviews/marker comments grant approval.
-        :param allowed_types: Conventional-Commits title types eligible for auto-merge.
+        :param authors: Logins whose PRs are eligible for auto-merge, or a
+            single login as a bare string. An empty allowlist makes nothing
+            eligible (fail-safe).
+        :param approvers: Logins whose reviews/marker comments grant approval,
+            or a single login as a bare string.
+        :param allowed_types: Conventional-Commits title types eligible for
+            auto-merge, or a single type as a bare string.
         :param min_age_minutes: The minimum head-commit age in minutes.
         :param marker: The marker substring an approver may comment to approve.
         :param merge_method: The merge method to use (``merge``, ``squash`` or
@@ -991,8 +1067,9 @@ class Repository(GitHub):
         self,
         title: str,
         body: str = "",
-        labels: Sequence[str] = (),
-        assignees: Sequence[str] = (),
+        labels: str | Sequence[str] = (),
+        assignees: str | Sequence[str] = (),
+        milestone: int | None = None,
     ) -> dict[str, Any]:
         """Create an issue in this repository.
 
@@ -1005,6 +1082,9 @@ class Repository(GitHub):
         :param assignees: Logins of users to assign to the new issue, or a
             single login as a bare string. Silently dropped unless the
             authenticated user has push access to the repository.
+        :param milestone: The number of the milestone to associate the new issue
+            with (see ``get_milestones``). Silently dropped unless the
+            authenticated user has push access to the repository.
         """
         labels = as_str_sequence(labels)
         assignees = as_str_sequence(assignees)
@@ -1015,7 +1095,356 @@ class Repository(GitHub):
             json["labels"] = list(labels)
         if assignees:
             json["assignees"] = list(assignees)
+        if milestone is not None:
+            json["milestone"] = milestone
         return self._post(url=self._url_issues, json=json).json()
+
+    def get_issue(self, issue_number: int) -> dict[str, Any]:
+        """Get a single issue in this repository.
+
+        :param issue_number: The number of the issue. A pull request number is
+            also accepted, since GitHub models pull requests as issues; the
+            payload then carries a ``pull_request`` key.
+        """
+        return self._get(url=f"{self._url_issues}/{issue_number}").json()
+
+    def update_issue(
+        self,
+        issue_number: int,
+        *,
+        title: str | Unset = UNSET,
+        body: str | Unset = UNSET,
+        state: IssueState | Unset = UNSET,
+        state_reason: IssueStateReason | None | Unset = UNSET,
+        duplicate_issue_id: int | Unset = UNSET,
+        labels: str | Sequence[str] | Unset = UNSET,
+        assignees: str | Sequence[str] | Unset = UNSET,
+        milestone: int | None | Unset = UNSET,
+    ) -> dict[str, Any]:
+        """Update an issue in this repository.
+
+        Only the fields passed are sent, so an update never disturbs a field the
+        caller did not mention. That distinction is what the ``UNSET`` default
+        buys: ``None`` and the empty sequence are meaningful values here (they
+        detach the milestone and clear the labels/assignees respectively), so
+        they cannot double as "leave this alone".
+
+        ``labels`` and ``assignees`` replace the existing set rather than adding
+        to it; to add or remove a few entries without knowing the rest, use
+        ``add_issue_labels``/``remove_issue_label`` or
+        ``add_issue_assignees``/``remove_issue_assignees``.
+
+        :param issue_number: The number of the issue.
+        :param title: A new title.
+        :param body: A new Markdown body; pass ``""`` to empty it.
+        :param state: ``open`` or ``closed`` (see also ``close_issue``).
+        :param state_reason: Why the issue is in that state (``completed``,
+            ``not_planned``, ``duplicate`` or ``reopened``), or None to clear it.
+            It must be passed alongside ``state``, and GitHub applies it only
+            when the state actually changes: re-closing an already-closed issue
+            keeps the reason it was closed with.
+        :param duplicate_issue_id: The id (not the number) of the issue this one
+            duplicates. GitHub requires it when ``state_reason`` is ``duplicate``
+            and ignores it otherwise, so the two must be passed together.
+        :param labels: Names of the labels the issue should carry, replacing any
+            current ones; a bare string is one label, and an empty sequence
+            clears them all. Labels that do not already exist are created.
+        :param assignees: Logins the issue should be assigned to, replacing any
+            current ones; a bare string is one login, and an empty sequence
+            unassigns everyone.
+        :param milestone: The number of the milestone to associate the issue
+            with; pass None to detach it.
+        :raises ValueError: If no field is given (the request would be a no-op),
+            if ``state`` is neither open nor closed, if ``state_reason`` is given
+            without ``state``, or if ``state_reason='duplicate'`` and
+            ``duplicate_issue_id`` are not given together.
+        """
+        # GitHub documents state_reason as "ignored unless state is changed", so
+        # sending it alone silently does nothing. Refuse it rather than let the
+        # caller believe an update happened.
+        if isinstance(state, Unset) and not isinstance(state_reason, Unset):
+            raise ValueError(
+                "state_reason is ignored by GitHub unless state changes too; "
+                "pass state (e.g. IssueState.CLOSED) alongside it."
+            )
+        # `duplicate` and `duplicate_issue_id` are only meaningful together:
+        # without the id GitHub rejects the request, and without the reason it
+        # drops the id. Comparison is by value so an equivalent plain string
+        # still takes this path, as it does everywhere else a state is checked.
+        is_duplicate = (
+            not isinstance(state_reason, Unset)
+            and state_reason is not None
+            and str(state_reason) == IssueStateReason.DUPLICATE
+        )
+        if is_duplicate and isinstance(duplicate_issue_id, Unset):
+            raise ValueError(
+                "state_reason='duplicate' requires duplicate_issue_id, the id "
+                "of the issue this one duplicates."
+            )
+        if not is_duplicate and not isinstance(duplicate_issue_id, Unset):
+            raise ValueError(
+                "duplicate_issue_id is ignored by GitHub unless state_reason is "
+                "'duplicate'; pass IssueStateReason.DUPLICATE alongside it."
+            )
+        json: dict[str, Any] = {}
+        if not isinstance(title, Unset):
+            json["title"] = title
+        if not isinstance(body, Unset):
+            json["body"] = body
+        if not isinstance(state, Unset):
+            _validate_issue_state(state)
+            json["state"] = str(state)
+        if not isinstance(state_reason, Unset):
+            json["state_reason"] = None if state_reason is None else str(state_reason)
+        if not isinstance(duplicate_issue_id, Unset):
+            json["duplicate_issue_id"] = duplicate_issue_id
+        if not isinstance(labels, Unset):
+            json["labels"] = list(as_str_sequence(labels))
+        if not isinstance(assignees, Unset):
+            json["assignees"] = list(as_str_sequence(assignees))
+        if not isinstance(milestone, Unset):
+            json["milestone"] = milestone
+        if not json:
+            raise ValueError(
+                f"No field to update was given for issue #{issue_number}; "
+                "pass at least one of title, body, state, state_reason, "
+                "labels, assignees or milestone."
+            )
+        return self._patch(url=f"{self._url_issues}/{issue_number}", json=json).json()
+
+    def close_issue(
+        self,
+        issue_number: int,
+        state_reason: IssueStateReason = IssueStateReason.COMPLETED,
+        duplicate_issue_id: int | Unset = UNSET,
+    ) -> dict[str, Any]:
+        """Close an issue in this repository.
+
+        Closing an already-closed issue is not an error, but it is not a state
+        change either, so GitHub keeps the existing ``state_reason``. Reopen the
+        issue first to re-close it with a different reason.
+
+        :param issue_number: The number of the issue.
+        :param state_reason: Why the issue is being closed (``completed``, the
+            default, ``not_planned`` or ``duplicate``).
+        :param duplicate_issue_id: The id (not the number) of the issue this one
+            duplicates. Required when ``state_reason`` is ``duplicate``, and
+            rejected otherwise (see ``update_issue``).
+        """
+        return self.update_issue(
+            issue_number,
+            state=IssueState.CLOSED,
+            state_reason=state_reason,
+            duplicate_issue_id=duplicate_issue_id,
+        )
+
+    def reopen_issue(self, issue_number: int) -> dict[str, Any]:
+        """Reopen a closed issue in this repository.
+
+        :param issue_number: The number of the issue.
+        """
+        return self.update_issue(
+            issue_number, state=IssueState.OPEN, state_reason=IssueStateReason.REOPENED
+        )
+
+    def update_issue_comment(self, comment_id: int, body: str) -> dict[str, Any]:
+        """Edit an existing comment on an issue or pull request.
+
+        :param comment_id: The id of the comment (its ``id`` field, which is
+            unique repository-wide and unrelated to the issue number).
+        :param body: The new Markdown body, replacing the current one.
+        """
+        return self._patch(
+            url=f"{self._url_issue_comments}/{comment_id}",
+            json={"body": body},
+        ).json()
+
+    def delete_issue_comment(self, comment_id: int) -> requests.Response:
+        """Delete a comment from an issue or pull request.
+
+        :param comment_id: The id of the comment (its ``id`` field, which is
+            unique repository-wide and unrelated to the issue number).
+        """
+        return self._delete(url=f"{self._url_issue_comments}/{comment_id}")
+
+    def get_issue_labels(self, issue_number: int, n: int = 0) -> list[dict[str, Any]]:
+        """List the labels on an issue.
+
+        :param issue_number: The number of the issue.
+        :param n: The maximum number of labels to return (0 means all).
+        """
+        return self._extract_all(url=f"{self._url_issues}/{issue_number}/labels", n=n)
+
+    def add_issue_labels(
+        self, issue_number: int, labels: str | Sequence[str]
+    ) -> list[dict[str, Any]]:
+        """Add labels to an issue, keeping the ones already on it.
+
+        :param issue_number: The number of the issue.
+        :param labels: Names of the labels to add, or a single name as a bare
+            string. Labels that do not already exist are created by GitHub.
+        :return: All labels on the issue after the addition.
+        :raises ValueError: If no label is given. GitHub rejects an empty list
+            here with a 422; use ``set_issue_labels`` to clear labels instead.
+        """
+        names = list(as_str_sequence(labels))
+        if not names:
+            raise ValueError(
+                f"No label to add was given for issue #{issue_number}; "
+                "pass at least one name, or use set_issue_labels(..., ()) to "
+                "remove every label."
+            )
+        return self._post(
+            url=f"{self._url_issues}/{issue_number}/labels",
+            json={"labels": names},
+        ).json()
+
+    def set_issue_labels(
+        self, issue_number: int, labels: str | Sequence[str]
+    ) -> list[dict[str, Any]]:
+        """Replace all labels on an issue with the given ones.
+
+        :param issue_number: The number of the issue.
+        :param labels: Names of the labels the issue should carry, or a single
+            name as a bare string; an empty sequence removes every label.
+        :return: All labels on the issue after the replacement.
+        """
+        return self._put(
+            url=f"{self._url_issues}/{issue_number}/labels",
+            json={"labels": list(as_str_sequence(labels))},
+        ).json()
+
+    def remove_issue_label(self, issue_number: int, label: str) -> list[dict[str, Any]]:
+        """Remove a single label from an issue.
+
+        :param issue_number: The number of the issue.
+        :param label: The name of the label to remove. GitHub responds with 404
+            if the issue does not carry it.
+        :return: The labels remaining on the issue.
+        """
+        # A label name may contain spaces and slashes (e.g. "good first issue"),
+        # so it is URL-encoded rather than interpolated raw into the path.
+        return self._delete(
+            url=f"{self._url_issues}/{issue_number}/labels/{quote(label, safe='')}",
+        ).json()
+
+    def add_issue_assignees(
+        self, issue_number: int, assignees: str | Sequence[str]
+    ) -> dict[str, Any]:
+        """Assign users to an issue, keeping those already assigned.
+
+        :param issue_number: The number of the issue.
+        :param assignees: Logins to assign, or a single login as a bare string.
+            A login without push access to the repository is silently ignored.
+        :return: The updated issue.
+        """
+        return self._post(
+            url=f"{self._url_issues}/{issue_number}/assignees",
+            json={"assignees": list(as_str_sequence(assignees))},
+        ).json()
+
+    def remove_issue_assignees(
+        self, issue_number: int, assignees: str | Sequence[str]
+    ) -> dict[str, Any]:
+        """Unassign users from an issue, leaving the other assignees in place.
+
+        :param issue_number: The number of the issue.
+        :param assignees: Logins to unassign, or a single login as a bare string.
+        :return: The updated issue.
+        """
+        return self._delete(
+            url=f"{self._url_issues}/{issue_number}/assignees",
+            json={"assignees": list(as_str_sequence(assignees))},
+        ).json()
+
+    def get_milestones(
+        self, state: IssueState = IssueState.OPEN, n: int = 0
+    ) -> list[dict[str, Any]]:
+        """List milestones in this repository.
+
+        :param state: Filter milestones by state: ``open`` (the default),
+            ``closed``, or ``all``.
+        :param n: The maximum number of milestones to return (0 means all).
+        """
+        return self._extract_all(url=self._url_milestones, params={"state": state}, n=n)
+
+    def create_milestone(
+        self,
+        title: str,
+        description: str = "",
+        due_on: str = "",
+    ) -> dict[str, Any]:
+        """Create a milestone in this repository.
+
+        :param title: The title of the milestone.
+        :param description: A description of the milestone.
+        :param due_on: When the milestone is due, as an ISO-8601 timestamp
+            (e.g. ``2026-12-31T00:00:00Z``).
+        :return: The new milestone, whose ``number`` is what ``create_issue``
+            and ``update_issue`` take as their ``milestone``.
+        """
+        json: dict[str, Any] = {"title": title}
+        if description:
+            json["description"] = description
+        if due_on:
+            json["due_on"] = due_on
+        return self._post(url=self._url_milestones, json=json).json()
+
+    def update_milestone(
+        self,
+        milestone_number: int,
+        *,
+        title: str | Unset = UNSET,
+        description: str | Unset = UNSET,
+        state: IssueState | Unset = UNSET,
+        due_on: str | Unset = UNSET,
+    ) -> dict[str, Any]:
+        """Update a milestone in this repository.
+
+        As in ``update_issue``, only the fields passed are sent.
+
+        :param milestone_number: The ``number`` of the milestone (not its id).
+        :param title: A new title.
+        :param description: A new description; pass ``""`` to empty it.
+        :param state: ``open`` or ``closed``.
+        :param due_on: A new due date, as an ISO-8601 timestamp. GitHub's
+            milestone endpoint takes no null due date, so an existing one can be
+            moved but not removed.
+        :raises ValueError: If no field is given, if ``state`` is neither open
+            nor closed, or if ``due_on`` is empty.
+        """
+        json: dict[str, Any] = {}
+        if not isinstance(title, Unset):
+            json["title"] = title
+        if not isinstance(description, Unset):
+            json["description"] = description
+        if not isinstance(state, Unset):
+            _validate_issue_state(state, noun="milestone")
+            json["state"] = str(state)
+        if not isinstance(due_on, Unset):
+            if not due_on:
+                raise ValueError(
+                    "due_on must be a non-empty ISO-8601 timestamp; GitHub "
+                    "rejects an empty one and offers no way to clear a due date."
+                )
+            json["due_on"] = due_on
+        if not json:
+            raise ValueError(
+                f"No field to update was given for milestone #{milestone_number}; "
+                "pass at least one of title, description, state or due_on."
+            )
+        return self._patch(
+            url=f"{self._url_milestones}/{milestone_number}", json=json
+        ).json()
+
+    def delete_milestone(self, milestone_number: int) -> requests.Response:
+        """Delete a milestone from this repository.
+
+        Issues associated with the milestone are not deleted; they simply lose it.
+
+        :param milestone_number: The ``number`` of the milestone (not its id).
+        """
+        return self._delete(url=f"{self._url_milestones}/{milestone_number}")
 
     def get_issue_comments(self, issue_number: int, n: int = 0) -> list[dict[str, Any]]:
         """List comments on an issue in this repository.
