@@ -1,19 +1,20 @@
-import argparse
-import getpass
-import os
 import re
 import sys
 from pathlib import Path
 
 from github_rest_api import Repository
 from github_rest_api.scripts.utils import (
+    RedactingArgumentParser,
     find_project_root,
     get_project_version,
     get_repo,
+    reject_github_token,
+    resolve_github_token,
 )
 
 
 def _get_release_tag(tag: str, root: Path, validate: bool = True) -> str:
+    reject_github_token("--tag", tag)
     tag = tag.strip()
     if not tag:
         tag = get_project_version(root).strip()
@@ -54,7 +55,14 @@ def release_on_github(
     :param token: GitHub token.
         If not specified, the GITHUB_TOKEN environment variable is used.
     :param validate: If True, validate the tag against semantic versioning format before creating the release.
+    :raises ValueError: If a value that looks like a GitHub token is specified
+        for anything other than the token itself.
     """
+    # A release is public, so a token mistyped into any of these would be
+    # published. -t is the tag on this script rather than the token, which
+    # makes that slip easy; --no-validate would otherwise let it through.
+    reject_github_token("--branch", branch)
+    reject_github_token("--notes", notes)
     root = find_project_root()
     if not root:
         raise FileNotFoundError("Could not find project root (no .git found).")
@@ -65,13 +73,7 @@ def release_on_github(
     if not repo_name:
         raise ValueError("Could not find GitHub repository name.")
 
-    token = token or os.getenv("GITHUB_TOKEN", "")
-    if not token:
-        token = getpass.getpass("Please enter your GitHub token: ")
-        if not token:
-            raise ValueError(
-                "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
-            )
+    token = resolve_github_token(token)
     repo = Repository(token=token, repo=repo_name)
     data = {
         "tag_name": tag,
@@ -87,7 +89,7 @@ def release_on_github(
 
 
 def parse_args(args=None, namespace=None):
-    parser = argparse.ArgumentParser(
+    parser = RedactingArgumentParser(
         description="Make a release of the project on GitHub."
     )
     parser.add_argument(
@@ -97,7 +99,9 @@ def parse_args(args=None, namespace=None):
         help="The branch (default to main) from which to make the release.",
     )
     parser.add_argument(
-        "-t",
+        # No short option on purpose: -t reads as the token to anyone used to
+        # the other scripts, and the tag becomes the public name of the
+        # release, so that slip would publish the token.
         "--tag",
         default="",
         help="The tag for the release. If not specified, the version from project configuration is used.",

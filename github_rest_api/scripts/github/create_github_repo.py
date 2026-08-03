@@ -1,9 +1,7 @@
 """Add a GitHub repository and initialize a local Git repository with workflows."""
 
 import argparse
-import getpass
 import logging
-import os
 import shutil
 import sys
 from collections.abc import Sequence
@@ -13,15 +11,10 @@ from dulwich import porcelain
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, Ref
 
 from github_rest_api import Organization, User
+from github_rest_api.scripts.utils import resolve_github_token, validate_repo
 from github_rest_api.utils import as_str_sequence
 
 logger = logging.getLogger(__name__)
-
-
-def _validate_repo(repo: str) -> None:
-    parts = repo.split("/")
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        raise ValueError(f"Invalid repo format '{repo}'. Expected 'owner/repo'.")
 
 
 def _create_remote_repo(
@@ -169,15 +162,9 @@ def create_github_repo(
     branches: Sequence[str] = ("main",),
 ) -> None:
     branches = as_str_sequence(branches)
-    token = token or os.getenv("GITHUB_TOKEN", "")
-    if not token:
-        token = getpass.getpass("Please enter your GitHub token: ")
-        if not token:
-            raise ValueError(
-                "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
-            )
+    token = resolve_github_token(token)
     repo = repo.strip()
-    _validate_repo(repo)
+    validate_repo(repo)
     _create_remote_repo(
         repo=repo, private=private, token=token, is_owner_user=is_owner_user
     )
