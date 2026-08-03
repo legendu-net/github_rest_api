@@ -1465,6 +1465,32 @@ class Repository(GitHub):
             json={"body": body},
         ).json()
 
+    def create_issue_comment_image(
+        self, issue_number: int, url: str, alt: str = "", body: str = ""
+    ) -> dict[str, Any]:
+        """Add a comment containing an image to an issue.
+
+        GitHub has no public API for the attachment upload that its web UI
+        performs on drag and drop, so the image must already be hosted
+        somewhere reachable; this method only references it.
+
+        :param issue_number: The number of the issue.
+        :param url: The URL of an already uploaded image.
+        :param alt: Alt text of the image.
+        :param body: Optional text placed above the image.
+        """
+        # A bracket in the alt text would close the markdown label early and
+        # degrade the whole image to literal text, so escape both brackets
+        # (and the escape character itself, which must come first).
+        alt = alt.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+        # The URL is wrapped in angle brackets so that spaces and unbalanced
+        # parentheses, which are common in URLs derived from file names, do
+        # not terminate the markdown link early.
+        image = f"![{alt}](<{url}>)"
+        return self.create_issue_comment(
+            issue_number, f"{body}\n\n{image}" if body else image
+        )
+
     def archive(self) -> requests.Response:
         return self._patch(
             url=self._url_repo,

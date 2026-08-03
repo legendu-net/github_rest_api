@@ -215,6 +215,74 @@ def test_create_issue_comment_reaches_requests_post():
     assert mock_post.call_args.kwargs["json"] == {"body": "a comment"}
 
 
+def test_create_issue_comment_image_builds_markdown():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "create_issue_comment") as mock_comment:
+        repo.create_issue_comment_image(7, "https://h.test/a.png", alt="a shot")
+    assert mock_comment.call_args.args == (7, "![a shot](<https://h.test/a.png>)")
+
+
+def test_create_issue_comment_image_defaults_to_empty_alt():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "create_issue_comment") as mock_comment:
+        repo.create_issue_comment_image(7, "https://h.test/a.png")
+    assert mock_comment.call_args.args == (7, "![](<https://h.test/a.png>)")
+
+
+def test_create_issue_comment_image_places_body_above_image():
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "create_issue_comment") as mock_comment:
+        repo.create_issue_comment_image(7, "https://h.test/a.png", body="See below.")
+    assert mock_comment.call_args.args == (
+        7,
+        "See below.\n\n![](<https://h.test/a.png>)",
+    )
+
+
+def test_create_issue_comment_image_url_with_space_stays_intact():
+    """The angle brackets are what keep such a URL from ending the link early."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "create_issue_comment") as mock_comment:
+        repo.create_issue_comment_image(7, "https://h.test/shot (1).png")
+    assert mock_comment.call_args.args == (7, "![](<https://h.test/shot (1).png>)")
+
+
+def test_create_issue_comment_image_escapes_brackets_in_alt():
+    """An unescaped bracket closes the label and kills the image silently."""
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "create_issue_comment") as mock_comment:
+        repo.create_issue_comment_image(7, "https://h.test/a.png", alt="chart [v2]")
+    assert mock_comment.call_args.args == (
+        7,
+        "![chart \\[v2\\]](<https://h.test/a.png>)",
+    )
+
+
+def test_create_issue_comment_image_escapes_backslash_in_alt_first():
+    """A literal backslash must not turn into an escape for the next character.
+
+    The alt text needs both a backslash and a bracket to pin the ordering:
+    without the bracket, escaping in either order yields the same string.
+    """
+    repo = Repository("token", "owner/name")
+    with patch.object(repo, "create_issue_comment") as mock_comment:
+        repo.create_issue_comment_image(7, "https://h.test/a.png", alt="a\\[b")
+    assert mock_comment.call_args.args == (7, "![a\\\\\\[b](<https://h.test/a.png>)")
+
+
+def test_create_issue_comment_image_reaches_requests_post():
+    """See `test_create_issue_reaches_requests_post` for why this layer."""
+    repo = Repository("token", "owner/name")
+    with patch("github_rest_api.github.requests.post") as mock_post:
+        repo.create_issue_comment_image(7, "https://h.test/a.png", alt="a shot")
+    assert mock_post.call_args.kwargs["url"] == (
+        "https://api.github.com/repos/owner/name/issues/7/comments"
+    )
+    assert mock_post.call_args.kwargs["json"] == {
+        "body": "![a shot](<https://h.test/a.png>)"
+    }
+
+
 def test_create_issue_passes_milestone():
     repo = Repository("token", "owner/name")
     with patch.object(repo, "_post", return_value=MagicMock()) as mock_post:
