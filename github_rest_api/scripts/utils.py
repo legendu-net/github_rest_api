@@ -1,5 +1,7 @@
 """Util functions for GitHub actions."""
 
+import getpass
+import os
 import random
 import tomllib
 from collections.abc import Sequence
@@ -10,6 +12,35 @@ from dulwich import porcelain
 from dulwich.repo import Repo
 
 from github_rest_api.utils import as_str_sequence
+
+
+def resolve_github_token(token: str = "") -> str:
+    """Resolve a GitHub token from the argument, the environment or a prompt.
+
+    :param token: An explicitly provided token, which takes precedence.
+        When empty, the ``GITHUB_TOKEN`` environment variable is used, and
+        failing that the token is asked for interactively.
+    :raises ValueError: If no token is available from any of the 3 sources.
+    """
+    token = token or os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        token = getpass.getpass("Please enter your GitHub token: ")
+        if not token:
+            raise ValueError(
+                "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
+            )
+    return token
+
+
+def validate_repo(repo: str) -> None:
+    """Check that a repository is of the form ``owner/repo``.
+
+    :param repo: The GitHub repository to validate.
+    :raises ValueError: If the repository is not of the form ``owner/repo``.
+    """
+    parts = repo.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"Invalid repo format '{repo}'. Expected 'owner/repo'.")
 
 
 def config_git(local_repo_dir: str | Path, user_email: str, user_name: str):

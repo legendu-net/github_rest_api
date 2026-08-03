@@ -35,6 +35,7 @@ scripts.create_pull_request = "github_rest_api.scripts.github.create_pull_reques
 scripts.release_on_github = "github_rest_api.scripts.github.release_on_github:main"
 scripts.remove_branch = "github_rest_api.scripts.github.remove_branch:main"
 scripts.update_version_containerfile = "github_rest_api.scripts.container.update_version_containerfile:main"
+scripts.upload_image_to_issue = "github_rest_api.scripts.github.upload_image_to_issue:main"
 
 [dependency-groups]
 dev = [

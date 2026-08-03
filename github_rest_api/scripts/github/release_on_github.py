@@ -1,6 +1,4 @@
 import argparse
-import getpass
-import os
 import re
 import sys
 from pathlib import Path
@@ -10,6 +8,7 @@ from github_rest_api.scripts.utils import (
     find_project_root,
     get_project_version,
     get_repo,
+    resolve_github_token,
 )
 
 
@@ -65,13 +64,7 @@ def release_on_github(
     if not repo_name:
         raise ValueError("Could not find GitHub repository name.")
 
-    token = token or os.getenv("GITHUB_TOKEN", "")
-    if not token:
-        token = getpass.getpass("Please enter your GitHub token: ")
-        if not token:
-            raise ValueError(
-                "No GitHub token is provided (via $GITHUB_TOKEN, --token or at prompt)."
-            )
+    token = resolve_github_token(token)
     repo = Repository(token=token, repo=repo_name)
     data = {
         "tag_name": tag,
