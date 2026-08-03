@@ -1,4 +1,5 @@
 import json
+import logging
 import subprocess as sp
 import sys
 from unittest.mock import MagicMock, patch
@@ -352,6 +353,20 @@ def test_upload_image_surfaces_stderr_on_failure(tmp_path):
                 module.upload_image(image, "tasks", [])
 
 
+def test_upload_image_reports_the_upload(tmp_path, caplog):
+    """The upload is the slow step, so it must not look like a hang."""
+    image = tmp_path / "a.png"
+    image.touch()
+    proc = sp.CompletedProcess([], returncode=0, stdout=json.dumps({"secure_url": URL}))
+    with patch.object(module.shutil, "which", return_value="/usr/bin/cld"):
+        with patch.object(module.sp, "run", return_value=proc):
+            with caplog.at_level(logging.INFO, logger=module.__name__):
+                module.upload_image(image, "tasks", ["x", "y"])
+    assert f"Uploading '{image}' to the Cloudinary folder 'tasks'" in caplog.text
+    assert "with tags x, y" in caplog.text
+    assert f"Uploaded the image to {URL}" in caplog.text
+
+
 def _run_main(monkeypatch, argv, repository=None):
     """Drive `main` with a mocked `Repository` and return it with the exit code."""
     repository = repository or MagicMock()
@@ -508,6 +523,66 @@ def test_main_does_not_claim_to_have_created_an_existing_issue(monkeypatch, caps
     err = capsys.readouterr().err
     assert "403" in err
     assert "Created issue" not in err
+
+
+def test_main_reports_the_created_issue(monkeypatch, caplog):
+    """Progress goes to the log, so that stdout stays the issue number alone."""
+    repository = MagicMock()
+    repository.create_issue.return_value = {
+        "number": 42,
+        "html_url": "https://github.com/dclong/tasks/issues/42",
+    }
+    with caplog.at_level(logging.INFO, logger=module.__name__):
+        _run_main(
+            monkeypatch,
+            ["--repo", "dclong/tasks", "--issue-title", "a title", "--image-url", URL],
+            repository,
+        )
+    assert "Creating issue 'a title' in dclong/tasks" in caplog.text
+    assert "Created issue #42: https://github.com/dclong/tasks/issues/42" in caplog.text
+
+
+def test_main_reports_a_created_issue_without_a_link(monkeypatch, caplog):
+    """A response without an html_url must not log a message that looks cut off."""
+    repository = MagicMock()
+    repository.create_issue.return_value = {"number": 42}
+    with caplog.at_level(logging.INFO, logger=module.__name__):
+        _run_main(
+            monkeypatch,
+            ["--repo", "dclong/tasks", "--issue-title", "a title", "--image-url", URL],
+            repository,
+        )
+    assert "Created issue #42." in caplog.text
+
+
+def test_main_keeps_the_log_off_stdout(monkeypatch):
+    """Stdout carries the issue number alone, so the progress has to go elsewhere.
+
+    Asserting on captured stdout cannot catch this: under pytest the root
+    logger already has handlers, which makes `basicConfig` a no-op.
+    """
+    with patch.object(module.logging, "basicConfig") as mock:
+        _run_main(
+            monkeypatch,
+            ["--repo", "dclong/tasks", "--issue-number", "7", "--image-url", URL],
+        )
+    # Neither a stream nor a handler, which is a `StreamHandler` on stderr.
+    assert mock.call_args.kwargs == {"level": logging.INFO, "format": "%(message)s"}
+
+
+def test_main_reports_the_posted_comment(monkeypatch, caplog):
+    repository = MagicMock()
+    repository.create_issue_comment_image.return_value = {
+        "html_url": "https://github.com/dclong/tasks/issues/7#issuecomment-1"
+    }
+    with caplog.at_level(logging.INFO, logger=module.__name__):
+        _run_main(
+            monkeypatch,
+            ["--repo", "dclong/tasks", "--issue-number", "7", "--image-url", URL],
+            repository,
+        )
+    assert "Commenting on issue #7 of dclong/tasks" in caplog.text
+    assert "issuecomment-1" in caplog.text
 
 
 def test_main_does_not_upload_when_the_issue_picker_is_cancelled(monkeypatch):
