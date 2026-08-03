@@ -8,7 +8,11 @@ version = "0.49.0"
 description = "Simple wrapper of GitHub REST APIs."
 readme = "README.md"
 authors = [ { name = "Ben Du", email = "longendu@yahoo.com" } ]
-requires-python = ">=3.12,<4"
+# 3.12.7 rather than 3.12: earlier patch releases decide whether a required
+# mutually exclusive argparse group was satisfied by comparing the parsed value
+# against the default with `is`, so an explicitly empty option is mistaken for
+# an absent one.
+requires-python = ">=3.12.7,<4"
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.12",

@@ -7,7 +7,7 @@ A simple Python wrapper for GitHub REST APIs, optimized for use in GitHub Action
 - **Purpose:** Provide a streamlined interface for interacting with GitHub's REST API
   and performing Git operations within automation scripts.
 - **Main Technologies:**
-  - **Python 3.12+**: Core language.
+  - **Python 3.12.7+**: Core language.
   - **requests**: For HTTP interactions with the GitHub API.
   - **dulwich**: A pure-Python implementation of Git for repository operations.
   - **tenacity**: For retry logic on API requests.

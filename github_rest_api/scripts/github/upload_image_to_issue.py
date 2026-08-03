@@ -12,13 +12,18 @@ import re
 import shutil
 import subprocess as sp
 import sys
-from argparse import ArgumentParser, Namespace
+from argparse import Namespace
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any
 
 from github_rest_api import IssueState, Repository
-from github_rest_api.scripts.utils import resolve_github_token, validate_repo
+from github_rest_api.scripts.utils import (
+    RedactingArgumentParser,
+    reject_github_token,
+    resolve_github_token,
+    validate_repo,
+)
 from github_rest_api.utils import as_str_sequence
 
 POPULAR_REPOS = ("dclong/tasks", "legendu-net/blog")
@@ -27,12 +32,6 @@ POPULAR_REPOS = ("dclong/tasks", "legendu-net/blog")
 FZF_EXIT_NO_MATCH = 1
 FZF_EXIT_ERROR = 2
 FZF_EXIT_ABORT = 130
-# The prefixed GitHub token formats: gh[pousr]_ for the classic ones and
-# github_pat_ for fine-grained ones. The trailing lengths are open ended
-# because GitHub reserves the right to grow tokens up to 255 characters, and
-# the prefix plus 20+ alphanumerics is already specific enough that ordinary
-# prose cannot trip it.
-GITHUB_TOKEN = re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 SECURE_URL = re.compile(r'"secure_url"\s*:\s*"(?P<url>[^"]+)"')
 CLOUDINARY_URL = re.compile(r"https://res\.cloudinary\.com/\S+")
@@ -67,41 +66,6 @@ def parse_tags(tags: str | Sequence[str]) -> list[str]:
             if part and part not in result:
                 result.append(part)
     return result
-
-
-class RedactingArgumentParser(ArgumentParser):
-    """An ``ArgumentParser`` that keeps GitHub tokens out of its own errors.
-
-    argparse quotes the offending value back at the user for an unrecognized
-    option or a bad type, so ``-t <token>`` -- the very slip that dropping the
-    short ``-t`` is meant to catch -- would print the token to stderr.
-    """
-
-    def error(self, message: str) -> NoReturn:
-        super().error(GITHUB_TOKEN.sub("<redacted>", message))
-
-
-def reject_github_token(option: str, value: str) -> None:
-    """Refuse a value that looks like a GitHub token.
-
-    Only ``--token`` is meant to carry one. Everything else this script accepts
-    ends up somewhere public: an issue title, a comment body, an image tag. A
-    token mistyped into one of those is disclosed to everyone who can read the
-    repository, so it is rejected rather than sent.
-
-    The offending value is deliberately kept out of the error message, which
-    would otherwise copy the token into logs and terminal scrollback.
-
-    :param option: The name of the option the value came from, for the message.
-    :param value: The value to check.
-    :raises ValueError: If the value contains something shaped like a token.
-    """
-    if GITHUB_TOKEN.search(value):
-        raise ValueError(
-            f"The value passed to {option} looks like a GitHub token. Pass a "
-            "token with --token or $GITHUB_TOKEN instead. If it is a real "
-            "token, revoke it: it is already in your shell history."
-        )
 
 
 def cloudinary_folder(repo: str) -> str:

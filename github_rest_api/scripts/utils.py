@@ -3,15 +3,60 @@
 import getpass
 import os
 import random
+import re
 import tomllib
+from argparse import ArgumentParser
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, NoReturn
 
 from dulwich import porcelain
 from dulwich.repo import Repo
 
 from github_rest_api.utils import as_str_sequence
+
+# The prefixed GitHub token formats: gh[pousr]_ for the classic ones and
+# github_pat_ for fine-grained ones. The trailing lengths are open ended
+# because GitHub reserves the right to grow tokens up to 255 characters, and
+# the prefix plus 20+ alphanumerics is already specific enough that ordinary
+# prose cannot trip it. Legacy 40-hex tokens are deliberately not matched:
+# they are indistinguishable from a commit SHA.
+GITHUB_TOKEN = re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}")
+
+
+class RedactingArgumentParser(ArgumentParser):
+    """An ``ArgumentParser`` that keeps GitHub tokens out of its own errors.
+
+    argparse quotes the offending value back at the user for an unrecognized
+    option or a bad type, which would print to stderr a token that was typed
+    into the wrong option.
+    """
+
+    def error(self, message: str) -> NoReturn:
+        super().error(GITHUB_TOKEN.sub("<redacted>", message))
+
+
+def reject_github_token(option: str, value: str) -> None:
+    """Refuse a value that looks like a GitHub token.
+
+    Only a token option is meant to carry one. Values of other options tend to
+    end up somewhere public -- an issue title, a comment body, a release name --
+    where a mistyped token is disclosed to everyone who can read the
+    repository, so it is rejected rather than sent.
+
+    The offending value is deliberately kept out of the error message, which
+    would otherwise copy the token into logs and terminal scrollback.
+
+    :param option: The name of the option the value came from, for the message.
+    :param value: The value to check.
+    :raises ValueError: If the value contains something shaped like a token.
+    """
+    if GITHUB_TOKEN.search(value):
+        raise ValueError(
+            f"The value passed to {option} looks like a GitHub token. Pass a "
+            "token with --token or $GITHUB_TOKEN instead. If it is a real "
+            "token, revoke it: it is already in your shell history."
+        )
 
 
 def resolve_github_token(token: str = "") -> str:
