@@ -8,6 +8,7 @@ environment variables.
 """
 
 import json
+import logging
 import re
 import shutil
 import subprocess as sp
@@ -25,6 +26,8 @@ from github_rest_api.scripts.utils import (
     validate_repo,
 )
 from github_rest_api.utils import as_str_sequence
+
+logger = logging.getLogger(__name__)
 
 POPULAR_REPOS = ("dclong/tasks", "legendu-net/blog")
 # fzf reports both "nothing matched the query" and "the user walked away" through
@@ -66,6 +69,17 @@ def parse_tags(tags: str | Sequence[str]) -> list[str]:
             if part and part not in result:
                 result.append(part)
     return result
+
+
+def _link(response: dict[str, Any]) -> str:
+    """Render the web link of a created issue or comment for a log message.
+
+    :param response: An issue or comment as returned by the GitHub API. GitHub
+        always carries an ``html_url``, but a message reading ``Created issue
+        #7: `` would look truncated if one ever did not.
+    """
+    url = response.get("html_url", "")
+    return f": {url}" if url else "."
 
 
 def cloudinary_folder(repo: str) -> str:
@@ -287,6 +301,12 @@ def upload_image(image: Path, folder: str, tags: Sequence[str]) -> str:
             "The Cloudinary CLI (cld) is not installed but is needed to upload "
             "a local image. Install it, or pass --image-url instead."
         )
+    logger.info(
+        "Uploading '%s' to the Cloudinary folder '%s'%s ...",
+        image,
+        folder,
+        f" with tags {', '.join(tags)}" if tags else "",
+    )
     # check=True is avoided on purpose: it would raise a CalledProcessError
     # whose message drops stderr, which is exactly where Cloudinary explains
     # what went wrong.
@@ -301,7 +321,9 @@ def upload_image(image: Path, folder: str, tags: Sequence[str]) -> str:
             f"Failed to upload '{image}' to Cloudinary (exit {proc.returncode}): "
             f"{proc.stderr.strip() or proc.stdout.strip()}"
         )
-    return extract_secure_url(proc.stdout)
+    url = extract_secure_url(proc.stdout)
+    logger.info("Uploaded the image to %s", url)
+    return url
 
 
 def parse_args(args=None, namespace=None) -> Namespace:
@@ -460,9 +482,13 @@ def upload_image_to_issue(
     )
     created = not issue_number
     if created:
-        issue_number = repository.create_issue(title=str(issue_title))["number"]
+        logger.info("Creating issue '%s' in %s ...", issue_title, repo)
+        issue = repository.create_issue(title=str(issue_title))
+        issue_number = issue["number"]
+        logger.info("Created issue #%s%s", issue_number, _link(issue))
+    logger.info("Commenting on issue #%s of %s ...", issue_number, repo)
     try:
-        repository.create_issue_comment_image(
+        comment = repository.create_issue_comment_image(
             issue_number, url, alt=alt or Path(image_path or url).name, body=body
         )
     except Exception as e:
@@ -475,11 +501,16 @@ def upload_image_to_issue(
                 f"Retry with --issue-number {issue_number}."
             ) from e
         raise
+    logger.info("Posted the comment%s", _link(comment))
     return issue_number
 
 
 def main() -> int:
     args = parse_args()
+    # The progress messages are emitted through logging, which the root logger
+    # would otherwise suppress. They go to stderr, leaving stdout to the issue
+    # number alone.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         issue_number = upload_image_to_issue(
             token=args.token,
