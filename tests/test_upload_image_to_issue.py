@@ -388,11 +388,11 @@ def test_main_comments_on_an_existing_issue(monkeypatch, capsys):
     repository.create_issue_comment_image.assert_called_once()
     assert repository.create_issue_comment_image.call_args.args == (7, URL)
     repository.create_issue.assert_not_called()
-    # The bare number, so that it can be captured and reused.
-    assert capsys.readouterr().out == "7\n"
+    # Everything the command has to say goes to the log.
+    assert capsys.readouterr().out == ""
 
 
-def test_main_creates_an_issue_and_prints_its_number(monkeypatch, capsys):
+def test_main_creates_an_issue_and_comments_on_it(monkeypatch, capsys):
     repository = MagicMock()
     repository.create_issue.return_value = {"number": 42}
     _, code = _run_main(
@@ -403,7 +403,7 @@ def test_main_creates_an_issue_and_prints_its_number(monkeypatch, capsys):
     assert code == 0
     assert repository.create_issue.call_args.kwargs == {"title": "a title"}
     assert repository.create_issue_comment_image.call_args.args == (42, URL)
-    assert capsys.readouterr().out == "42\n"
+    assert capsys.readouterr().out == ""
 
 
 def test_main_selects_a_repository_when_none_is_given(monkeypatch):
@@ -526,7 +526,7 @@ def test_main_does_not_claim_to_have_created_an_existing_issue(monkeypatch, caps
 
 
 def test_main_reports_the_created_issue(monkeypatch, caplog):
-    """Progress goes to the log, so that stdout stays the issue number alone."""
+    """The log is the only place the number of a new issue is reported."""
     repository = MagicMock()
     repository.create_issue.return_value = {
         "number": 42,
@@ -556,10 +556,11 @@ def test_main_reports_a_created_issue_without_a_link(monkeypatch, caplog):
 
 
 def test_main_keeps_the_log_off_stdout(monkeypatch):
-    """Stdout carries the issue number alone, so the progress has to go elsewhere.
+    """Progress and diagnostics belong on stderr, as does everything else here.
 
-    Asserting on captured stdout cannot catch this: under pytest the root
-    logger already has handlers, which makes `basicConfig` a no-op.
+    Asserting on captured stdout cannot catch a stream misconfigured to stdout:
+    under pytest the root logger already has handlers, which makes
+    `basicConfig` a no-op.
     """
     with patch.object(module.logging, "basicConfig") as mock:
         _run_main(
