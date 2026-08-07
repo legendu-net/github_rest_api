@@ -508,11 +508,11 @@ def upload_image_to_issue(
 def main() -> int:
     args = parse_args()
     # The progress messages are emitted through logging, which the root logger
-    # would otherwise suppress. They go to stderr, leaving stdout to the issue
-    # number alone.
+    # would otherwise suppress. They go to stderr, which is also where the
+    # number of the issue is reported.
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
-        issue_number = upload_image_to_issue(
+        upload_image_to_issue(
             token=args.token,
             repo=args.repo,
             issue_number=args.issue_number,
@@ -526,9 +526,6 @@ def main() -> int:
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 1
-    # The bare number is the only thing on stdout so that it can be captured
-    # with a command substitution and reused.
-    print(issue_number)
     return 0
 
 
