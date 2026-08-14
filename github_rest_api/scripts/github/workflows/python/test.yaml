@@ -1,9 +1,8 @@
 name: Run Tests
 on:
-  push:
-    branches: [ main ]
   pull_request:
-    branches: [ dev, main ]
+    branches:
+      - main
 jobs:
   test_code:
     runs-on: ${{matrix.os}}
@@ -12,20 +11,21 @@ jobs:
         os: 
           - macOS-latest
           - ubuntu-latest
+        # The oldest supported patch release, spelled out rather than "3.12":
+        # a bare "3.12" resolves to the runner's system interpreter, which is
+        # below `requires-python` on ubuntu-latest, and uv then fails outright
+        # instead of looking for a compatible interpreter to download.
         python-version:
-          - "3.12"
+          - "3.12.7"
           - "3.13"
           - "3.14"
     steps:
     - uses: actions/checkout@v6
     - name: Install dependencies
       run: |
-        if [[ "$(uname)" == *Darwin* ]]; then
-          #curl -sSL https://raw.githubusercontent.com/legendu-net/icon/main/install_icon.sh | sudo bash -
-          #icon docker -ic --user-to-docker ""
-          brew install libmagic && brew link libmagic
-        fi
         curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
         uv sync --all-extras
     - name: Test with pytest
       run: uv run --python ${{ matrix.python-version }} pytest
+      env:
+        GITHUB_TOKEN: ${{ secrets.ACTIONS_TOKEN }}

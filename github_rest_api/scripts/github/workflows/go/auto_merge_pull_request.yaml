@@ -14,8 +14,8 @@ on:
   workflow_run:
     workflows:
       - Claude Code Review
-      - Lint Code
-      - Run Tests
+      - golangci-lint
+      - shellcheck
     types:
       - completed
   # Kept for approvals that come from a human rather than from Claude.
@@ -76,6 +76,5 @@ jobs:
           uvx --from github-rest-api@latest auto_merge_pull_request \
             --authors dclong \
             --approvers dclong 'claude[bot]' 'gemini-code-assist[bot]' \
-            --marker 'AUTO_MERGE_APPROVED' \
             ${{ inputs.dry_run && '--dry-run' || '' }} \
             --token ${{ secrets.ACTIONS_TOKEN }}

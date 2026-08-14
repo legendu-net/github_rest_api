@@ -1,0 +1,18 @@
+name: golangci-lint
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    container:
+      image: golangci/golangci-lint:v2.6.2-alpine
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check Code Formatting
+        run: golangci-lint fmt -d
+      - name: Lint Code
+        run: GOFLAGS=-buildvcs=false golangci-lint run
