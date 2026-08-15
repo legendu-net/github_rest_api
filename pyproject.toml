@@ -36,6 +36,7 @@ scripts.build_container_images = "github_rest_api.scripts.container.build_contai
 scripts.config_container = "github_rest_api.scripts.container.config_container:main"
 scripts.create_github_repo = "github_rest_api.scripts.github.create_github_repo:main"
 scripts.create_pull_request = "github_rest_api.scripts.github.create_pull_request:main"
+scripts.lint_repo = "github_rest_api.scripts.lint_repo:main"
 scripts.release_on_github = "github_rest_api.scripts.github.release_on_github:main"
 scripts.remove_branch = "github_rest_api.scripts.github.remove_branch:main"
 scripts.update_version_containerfile = "github_rest_api.scripts.container.update_version_containerfile:main"
