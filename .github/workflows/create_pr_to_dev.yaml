@@ -7,5 +7,5 @@ on:
       - gh-pages*
 jobs:
   create_pr_to_dev:
-    uses: legendu-net/.github/.github/workflows/create_pr_to_dev.yaml@main
+    uses: legendu-net/.github/.github/workflows/create-pr-to-dev.yaml@main
     secrets: inherit

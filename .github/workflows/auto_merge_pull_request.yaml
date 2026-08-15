@@ -58,7 +58,7 @@ jobs:
     if: |
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
-    uses: legendu-net/.github/.github/workflows/auto_merge_pull_request.yaml@main
+    uses: legendu-net/.github/.github/workflows/auto-merge-pull-request.yaml@main
     with:
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit

@@ -26,7 +26,7 @@ jobs:
       issues: write
       pull-requests: write
       id-token: write
-    uses: legendu-net/.github/.github/workflows/claude-code-review.yml@main
+    uses: legendu-net/.github/.github/workflows/claude-code-review.yaml@main
     with:
       pr_number: ${{ github.event.pull_request.number }}
       draft: ${{ github.event.pull_request.draft }}

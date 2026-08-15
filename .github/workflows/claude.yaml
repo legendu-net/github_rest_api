@@ -23,5 +23,5 @@ jobs:
       issues: read
       pull-requests: read
       id-token: write
-    uses: legendu-net/.github/.github/workflows/claude.yml@main
+    uses: legendu-net/.github/.github/workflows/claude.yaml@main
     secrets: inherit
