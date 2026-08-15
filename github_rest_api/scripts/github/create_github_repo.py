@@ -16,6 +16,10 @@ from github_rest_api.utils import as_str_sequence
 
 logger = logging.getLogger(__name__)
 
+# Workflows that configure this repository itself rather than the repositories
+# created from these templates.
+_REPO_ONLY_WORKFLOWS = frozenset({"check_workflow_template.yaml"})
+
 
 def _create_remote_repo(
     repo: str, private: bool, token: str, is_owner_user: bool
@@ -73,7 +77,6 @@ def _head_and_branches(path: Path) -> tuple[str | None, set[str]]:
 
 def _init_local_repo(
     repo: str,
-    language: str,
     dir_: str,
     token: str,
     protocol: str,
@@ -147,13 +150,12 @@ def _init_local_repo(
             logger.info("Successfully pushed branch '%s'.", branch)
     else:
         logger.info("Skipping push (pass --push to push branches to the remote).")
-    _add_workflow(path, language)
+    _add_workflow(path)
 
 
 def create_github_repo(
     repo: str,
     private: bool,
-    language: str,
     is_owner_user: bool,
     dir_: str,
     token: str,
@@ -170,7 +172,6 @@ def create_github_repo(
     )
     _init_local_repo(
         repo=repo,
-        language=language,
         dir_=dir_,
         token=token,
         branches=branches,
@@ -179,26 +180,22 @@ def create_github_repo(
     )
 
 
-def _add_workflow(path: Path, language: str, workflow_dir: Path | None = None) -> None:
+def _add_workflow(path: Path, workflow_dir: Path | None = None) -> None:
     if workflow_dir is None:
         workflow_dir = Path(__file__).parent / "workflows"
+    templates = [
+        yaml
+        for yaml in workflow_dir.glob("*.yaml")
+        if yaml.name not in _REPO_ONLY_WORKFLOWS
+    ]
+    if not templates:
+        raise FileNotFoundError(f"No workflow templates found in '{workflow_dir}'.")
     dir_dest = path / ".github" / "workflows"
     dir_dest.mkdir(parents=True, exist_ok=True)
-    for yaml in workflow_dir.glob("*.yaml"):
+    for yaml in templates:
         if not (dir_dest / yaml.name).exists():
             shutil.copy2(yaml, dir_dest)
             logger.info("Copied workflow %s to %s", yaml.name, dir_dest)
-    if not language:
-        return
-    lang_dir = workflow_dir / language
-    if not lang_dir.exists():
-        return
-    for yaml in lang_dir.glob("*.yaml"):
-        if not (dir_dest / yaml.name).exists():
-            shutil.copy2(yaml, dir_dest)
-            logger.info(
-                "Copied %s specific workflow %s to %s", language, yaml.name, dir_dest
-            )
 
 
 def parse_args(args=None, namespace=None):
@@ -236,14 +233,6 @@ def parse_args(args=None, namespace=None):
         dest="private",
         action="store_false",
         help="Whether to create the repository as public.",
-    )
-    parser.add_argument(
-        "-l",
-        "--lang",
-        "--language",
-        dest="language",
-        default="",
-        help="The language of the GitHub repository.",
     )
     parser.add_argument(
         "-d",
@@ -291,7 +280,6 @@ def main() -> int:
         create_github_repo(
             repo=args.repo,
             private=args.private,
-            language=args.language,
             is_owner_user=args.is_owner_user,
             dir_=args.dir,
             token=args.token,
