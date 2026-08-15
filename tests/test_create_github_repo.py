@@ -209,7 +209,7 @@ def test_add_workflow_downloads_templates_and_skips_non_files(tmp_path):
     dest.mkdir()
     listing = [
         _workflow_entry("lint.yaml"),
-        _workflow_entry("check_workflow_template.yaml"),
+        _workflow_entry("check-workflow-template.yaml"),
         _workflow_entry("subdir", type_="dir"),
     ]
     contents = {"lint.yaml": "name: lint\n"}
@@ -301,7 +301,7 @@ def test_add_workflow_raises_when_repo_has_no_templates(tmp_path):
 def test_add_workflow_raises_when_repo_has_only_repo_only_workflows(tmp_path):
     dest = tmp_path / "repo"
     dest.mkdir()
-    listing = [_workflow_entry("check_workflow_template.yaml")]
+    listing = [_workflow_entry("check-workflow-template.yaml")]
 
     with (
         patch(

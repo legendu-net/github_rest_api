@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Workflows that configure this repository itself rather than the repositories
 # created from these templates.
-_REPO_ONLY_WORKFLOWS = frozenset({"check_workflow_template.yaml"})
+_REPO_ONLY_WORKFLOWS = frozenset({"check-workflow-template.yaml"})
 
 # The default GitHub repo to copy workflow templates from.
 DEFAULT_WORKFLOWS_REPO = "legendu-net/github_rest_api"

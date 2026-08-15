@@ -1,4 +1,4 @@
-name: Auto Merge PR
+name: Merge PR
 on:
   # The Claude review runs with `track_progress`, which creates its tracking
   # comment when the review *starts* and then edits that same comment as the
@@ -47,10 +47,10 @@ concurrency:
   # and the newest run always sees the freshest state. Do not cancel in
   # progress: a run cancelled midway through the merge API call is worse than a
   # redundant one.
-  group: auto-merge-pull-request
+  group: merge-pull-request
   cancel-in-progress: false
 jobs:
-  auto_merge_pull_request:
+  merge_pull_request:
     # A triggering workflow that failed, was cancelled or was skipped left the
     # PR unmergeable or wrote no marker, so there is nothing new to act on.
     # This job checks out no PR code, so the elevated `workflow_run` context is
@@ -58,7 +58,7 @@ jobs:
     if: |
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
-    uses: legendu-net/.github/.github/workflows/auto-merge-pull-request.yaml@main
+    uses: legendu-net/.github/.github/workflows/merge-pr.yaml@main
     with:
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
