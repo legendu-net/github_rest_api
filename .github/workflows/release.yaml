@@ -4,5 +4,9 @@ on:
     types: [published]
 jobs:
   release:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     uses: legendu-net/.github/.github/workflows/release.yaml@main
     secrets: inherit

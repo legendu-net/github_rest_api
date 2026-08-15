@@ -1,8 +1,0 @@
-name: Release
-on:
-  release:
-    types: [published]
-jobs:
-  release:
-    uses: legendu-net/.github/.github/workflows/release.yaml@main
-    secrets: inherit

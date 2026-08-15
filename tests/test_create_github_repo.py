@@ -1,11 +1,15 @@
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dulwich import porcelain
 from dulwich.refs import HEADREF
 
+from github_rest_api.github import DEFAULT_TIMEOUT
 from github_rest_api.scripts.github.create_github_repo import (
     _add_workflow,
+    _download_workflow,
+    _ensure_remote,
     _init_local_repo,
 )
 
@@ -30,6 +34,7 @@ def _init_local(dir_: Path, branches=("main",)) -> None:
         protocol="git",
         push=False,
         branches=branches,
+        workflows_repo="",
     )
 
 
@@ -130,48 +135,192 @@ def test_init_local_repo_with_unborn_head_and_nothing_to_create(tmp_path):
     assert _branches(dir_) == {KEPT_BRANCH}
 
 
-def test_add_workflow_copies_templates_and_skips_repo_only_ones(tmp_path):
-    workflow_dir = tmp_path / "templates"
-    workflow_dir.mkdir()
-    (workflow_dir / "lint.yaml").write_text("name: lint\n")
-    (workflow_dir / "check_workflow_template.yaml").write_text("name: repo-only\n")
+FETCH_REFSPEC = b"+refs/heads/*:refs/remotes/origin/*"
+
+
+def _fetch_refspec(dir_: Path) -> bytes | None:
+    with porcelain.open_repo_closing(dir_) as repo:
+        try:
+            return repo.get_config().get((b"remote", b"origin"), b"fetch")
+        except KeyError:
+            return None
+
+
+def test_init_local_repo_sets_origin_fetch_refspec(tmp_path):
+    dir_ = tmp_path / "repo"
+    _init_local(dir_)
+    assert _fetch_refspec(dir_) == FETCH_REFSPEC
+
+
+def test_ensure_remote_repairs_fetch_refspec_for_matching_existing_origin(tmp_path):
+    dir_ = tmp_path / "repo"
+    dir_.mkdir()
+    porcelain.init(path=dir_)
+    porcelain.remote_add(dir_, "origin", "git@github.com:owner/name.git")
+    assert _fetch_refspec(dir_) is None
+
+    _ensure_remote(dir_, "owner/name", "git")
+
+    assert _fetch_refspec(dir_) == FETCH_REFSPEC
+
+
+def test_ensure_remote_leaves_mismatched_existing_origin_untouched(tmp_path):
+    dir_ = tmp_path / "repo"
+    dir_.mkdir()
+    porcelain.init(path=dir_)
+    porcelain.remote_add(dir_, "origin", "git@github.com:other/repo.git")
+
+    _ensure_remote(dir_, "owner/name", "git")
+
+    assert _fetch_refspec(dir_) is None
+    with porcelain.open_repo_closing(dir_) as repo:
+        url = repo.get_config().get((b"remote", b"origin"), b"url")
+    assert url == b"git@github.com:other/repo.git"
+
+
+def _mock_response(json_data=None, text=""):
+    resp = MagicMock()
+    resp.json.return_value = json_data
+    resp.text = text
+    resp.raise_for_status.return_value = None
+    return resp
+
+
+def _workflow_entry(name, type_="file"):
+    return {
+        "name": name,
+        "type": type_,
+        "download_url": f"https://raw.githubusercontent.com/owner/name/main/.github/workflows/{name}",
+    }
+
+
+def _fake_get(listing, contents):
+    def get(url, timeout, headers=None):
+        if url.endswith("/contents/.github/workflows"):
+            return _mock_response(json_data=listing)
+        name = url.rsplit("/", 1)[-1]
+        return _mock_response(text=contents[name])
+
+    return get
+
+
+def test_add_workflow_downloads_templates_and_skips_non_files(tmp_path):
     dest = tmp_path / "repo"
     dest.mkdir()
+    listing = [
+        _workflow_entry("lint.yaml"),
+        _workflow_entry("check_workflow_template.yaml"),
+        _workflow_entry("subdir", type_="dir"),
+    ]
+    contents = {"lint.yaml": "name: lint\n"}
 
-    _add_workflow(dest, workflow_dir=workflow_dir)
+    with patch(
+        "github_rest_api.scripts.github.create_github_repo.requests.get",
+        side_effect=_fake_get(listing, contents),
+    ):
+        _add_workflow(dest, workflows_repo="owner/name", token="")
 
-    copied = {p.name for p in (dest / ".github" / "workflows").iterdir()}
-    assert copied == {"lint.yaml"}
+    workflows_dir = dest / ".github" / "workflows"
+    assert {p.name for p in workflows_dir.iterdir()} == {"lint.yaml"}
+    assert (workflows_dir / "lint.yaml").read_text() == "name: lint\n"
 
 
 def test_add_workflow_does_not_overwrite_existing_file(tmp_path):
-    workflow_dir = tmp_path / "templates"
-    workflow_dir.mkdir()
-    (workflow_dir / "lint.yaml").write_text("name: new\n")
     dest = tmp_path / "repo"
     dest_workflows = dest / ".github" / "workflows"
     dest_workflows.mkdir(parents=True)
     (dest_workflows / "lint.yaml").write_text("name: customized\n")
+    listing = [_workflow_entry("lint.yaml")]
+    contents = {"lint.yaml": "name: new\n"}
 
-    _add_workflow(dest, workflow_dir=workflow_dir)
+    with patch(
+        "github_rest_api.scripts.github.create_github_repo.requests.get",
+        side_effect=_fake_get(listing, contents),
+    ):
+        _add_workflow(dest, workflows_repo="owner/name", token="")
 
     assert (dest_workflows / "lint.yaml").read_text() == "name: customized\n"
 
 
-def test_add_workflow_raises_when_template_dir_missing(tmp_path):
+def test_add_workflow_falls_back_to_contents_api_without_download_url(tmp_path):
+    dest = tmp_path / "repo"
+    dest.mkdir()
+    listing = [{"name": "lint.yaml", "type": "file", "download_url": None}]
+    contents = {"lint.yaml": "name: lint\n"}
+
+    with patch(
+        "github_rest_api.scripts.github.create_github_repo.requests.get",
+        side_effect=_fake_get(listing, contents),
+    ):
+        _add_workflow(dest, workflows_repo="owner/name", token="")
+
+    workflows_dir = dest / ".github" / "workflows"
+    assert (workflows_dir / "lint.yaml").read_text() == "name: lint\n"
+
+
+def test_download_workflow_omits_authorization_for_download_url():
+    entry = _workflow_entry("lint.yaml")
+
+    with patch(
+        "github_rest_api.scripts.github.create_github_repo.requests.get",
+        return_value=_mock_response(text="name: lint\n"),
+    ) as mock_get:
+        _download_workflow("owner/name", entry, token="secret-token")
+
+    mock_get.assert_called_once_with(url=entry["download_url"], timeout=DEFAULT_TIMEOUT)
+
+
+def test_download_workflow_fallback_sends_authenticated_raw_accept_header():
+    entry = {"name": "lint.yaml", "type": "file", "download_url": None}
+
+    with patch(
+        "github_rest_api.scripts.github.create_github_repo.requests.get",
+        return_value=_mock_response(text="name: lint\n"),
+    ) as mock_get:
+        _download_workflow("owner/name", entry, token="secret-token")
+
+    _, kwargs = mock_get.call_args
+    assert kwargs["headers"]["Authorization"] == "Bearer secret-token"
+    assert kwargs["headers"]["Accept"] == "application/vnd.github.raw+json"
+
+
+def test_add_workflow_raises_when_repo_has_no_templates(tmp_path):
     dest = tmp_path / "repo"
     dest.mkdir()
 
-    with pytest.raises(FileNotFoundError):
-        _add_workflow(dest, workflow_dir=tmp_path / "does-not-exist")
+    with (
+        patch(
+            "github_rest_api.scripts.github.create_github_repo.requests.get",
+            side_effect=_fake_get([], {}),
+        ),
+        pytest.raises(FileNotFoundError),
+    ):
+        _add_workflow(dest, workflows_repo="owner/name", token="")
 
 
-def test_add_workflow_raises_when_template_dir_has_only_repo_only_workflows(tmp_path):
-    workflow_dir = tmp_path / "templates"
-    workflow_dir.mkdir()
-    (workflow_dir / "check_workflow_template.yaml").write_text("name: repo-only\n")
+def test_add_workflow_raises_when_repo_has_only_repo_only_workflows(tmp_path):
+    dest = tmp_path / "repo"
+    dest.mkdir()
+    listing = [_workflow_entry("check_workflow_template.yaml")]
+
+    with (
+        patch(
+            "github_rest_api.scripts.github.create_github_repo.requests.get",
+            side_effect=_fake_get(listing, {}),
+        ),
+        pytest.raises(FileNotFoundError),
+    ):
+        _add_workflow(dest, workflows_repo="owner/name", token="")
+
+
+def test_add_workflow_skips_when_workflows_repo_is_empty(tmp_path):
     dest = tmp_path / "repo"
     dest.mkdir()
 
-    with pytest.raises(FileNotFoundError):
-        _add_workflow(dest, workflow_dir=workflow_dir)
+    with patch(
+        "github_rest_api.scripts.github.create_github_repo.requests.get"
+    ) as mock_get:
+        _add_workflow(dest, workflows_repo="", token="")
+
+    mock_get.assert_not_called()
+    assert not (dest / ".github").exists()

@@ -2,15 +2,16 @@
 
 import argparse
 import logging
-import shutil
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+import requests
 from dulwich import porcelain
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, Ref
 
 from github_rest_api import Organization, User
+from github_rest_api.github import DEFAULT_TIMEOUT, URL_API, build_http_headers
 from github_rest_api.scripts.utils import resolve_github_token, validate_repo
 from github_rest_api.utils import as_str_sequence
 
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 # Workflows that configure this repository itself rather than the repositories
 # created from these templates.
 _REPO_ONLY_WORKFLOWS = frozenset({"check_workflow_template.yaml"})
+
+# The default GitHub repo to copy workflow templates from.
+DEFAULT_WORKFLOWS_REPO = "legendu-net/github_rest_api"
 
 
 def _create_remote_repo(
@@ -42,11 +46,29 @@ def _remote_url(repo: str, protocol: str) -> str:
 
 
 def _ensure_remote(path: Path, repo: str, protocol: str) -> None:
+    url = _remote_url(repo, protocol)
     try:
-        porcelain.remote_add(path, "origin", _remote_url(repo, protocol))
+        porcelain.remote_add(path, "origin", url)
         logger.info("Added remote 'origin' for %s", repo)
     except porcelain.RemoteExists:
         pass
+    # `porcelain.remote_add` only writes the remote's `url`, unlike `git remote
+    # add`/`git clone`, which also set a `fetch` refspec. Without it, `git
+    # fetch`/`jj git fetch` never update `refs/remotes/origin/*`, so local
+    # branches silently stop tracking the remote. Repair it for a pre-existing
+    # 'origin' too (e.g. added by an older version of this script), but only
+    # when it already points at this repo, so an unrelated 'origin' remote is
+    # left untouched.
+    with porcelain.open_repo_closing(path) as r:
+        c = r.get_config()
+        try:
+            existing_url = c.get((b"remote", b"origin"), b"url")
+        except KeyError:
+            return
+        if existing_url != url.encode():
+            return
+        c.set((b"remote", b"origin"), b"fetch", b"+refs/heads/*:refs/remotes/origin/*")
+        c.write_to_path()
 
 
 def _active_branch(path: Path) -> str:
@@ -82,6 +104,7 @@ def _init_local_repo(
     protocol: str,
     push: bool,
     branches: Sequence[str] = ("main",),
+    workflows_repo: str = DEFAULT_WORKFLOWS_REPO,
 ) -> None:
     branches = list(dict.fromkeys(branches))
     if not branches:
@@ -150,7 +173,7 @@ def _init_local_repo(
             logger.info("Successfully pushed branch '%s'.", branch)
     else:
         logger.info("Skipping push (pass --push to push branches to the remote).")
-    _add_workflow(path)
+    _add_workflow(path, workflows_repo=workflows_repo, token=token)
 
 
 def create_github_repo(
@@ -162,6 +185,7 @@ def create_github_repo(
     protocol: str,
     push: bool,
     branches: Sequence[str] = ("main",),
+    workflows_repo: str = DEFAULT_WORKFLOWS_REPO,
 ) -> None:
     branches = as_str_sequence(branches)
     token = resolve_github_token(token)
@@ -177,25 +201,86 @@ def create_github_repo(
         branches=branches,
         protocol=protocol,
         push=push,
+        workflows_repo=workflows_repo,
     )
 
 
-def _add_workflow(path: Path, workflow_dir: Path | None = None) -> None:
-    if workflow_dir is None:
-        workflow_dir = Path(__file__).parent / "workflows"
-    templates = [
-        yaml
-        for yaml in workflow_dir.glob("*.yaml")
-        if yaml.name not in _REPO_ONLY_WORKFLOWS
+def _list_workflow_entries(workflows_repo: str, token: str) -> list[dict]:
+    """List the workflow template file entries available in a GitHub repo.
+
+    :param workflows_repo: The GitHub repo (in the format of owner/repo) to
+        list workflow templates from.
+    :param token: The GitHub token used to authenticate the request.
+    """
+    url = f"{URL_API}/repos/{workflows_repo}/contents/.github/workflows"
+    resp = requests.get(
+        url=url, headers=build_http_headers(token), timeout=DEFAULT_TIMEOUT
+    )
+    resp.raise_for_status()
+    return [
+        entry
+        for entry in resp.json()
+        if entry["type"] == "file"
+        and entry["name"].endswith(".yaml")
+        and entry["name"] not in _REPO_ONLY_WORKFLOWS
     ]
-    if not templates:
-        raise FileNotFoundError(f"No workflow templates found in '{workflow_dir}'.")
+
+
+def _download_workflow(workflows_repo: str, entry: dict, token: str) -> str:
+    """Download the raw content of a single workflow template.
+
+    Prefers the entry's ``download_url`` (served from
+    raw.githubusercontent.com, which has a much higher rate limit than the
+    api.github.com contents endpoint used to list the entries), falling back
+    to a raw content request against the contents API for the rare case
+    where GitHub omits it.
+
+    :param workflows_repo: The GitHub repo (in the format of owner/repo) to
+        download the workflow template from.
+    :param entry: A file entry as returned by ``_list_workflow_entries``.
+    :param token: The GitHub token used to authenticate the request.
+    """
+    download_url = entry.get("download_url")
+    if download_url:
+        # No Authorization header here: raw.githubusercontent.com already
+        # embeds any access it needs (e.g. a signed token for a private repo)
+        # in the URL itself, and forwarding an Authorization header scoped to
+        # a *different* repo makes it fail closed with a 404 even for public
+        # content.
+        resp = requests.get(url=download_url, timeout=DEFAULT_TIMEOUT)
+    else:
+        url = f"{URL_API}/repos/{workflows_repo}/contents/.github/workflows/{
+            entry['name']
+        }"
+        headers = build_http_headers(token) | {
+            "Accept": "application/vnd.github.raw+json"
+        }
+        resp = requests.get(url=url, headers=headers, timeout=DEFAULT_TIMEOUT)
+    resp.raise_for_status()
+    return resp.text
+
+
+def _add_workflow(path: Path, workflows_repo: str, token: str) -> None:
+    """Download workflow templates from a GitHub repo into a local repo.
+
+    :param path: The local repo directory to add workflow templates to.
+    :param workflows_repo: The GitHub repo (in the format of owner/repo) to
+        copy workflow templates from. An empty string skips this step.
+    :param token: The GitHub token used to authenticate the requests.
+    """
+    if not workflows_repo:
+        logger.info("Skipping workflow templates (workflows_repo is empty).")
+        return
+    entries = _list_workflow_entries(workflows_repo, token)
+    if not entries:
+        raise FileNotFoundError(f"No workflow templates found in '{workflows_repo}'.")
     dir_dest = path / ".github" / "workflows"
     dir_dest.mkdir(parents=True, exist_ok=True)
-    for yaml in templates:
-        if not (dir_dest / yaml.name).exists():
-            shutil.copy2(yaml, dir_dest)
-            logger.info("Copied workflow %s to %s", yaml.name, dir_dest)
+    for entry in entries:
+        dest = dir_dest / entry["name"]
+        if not dest.exists():
+            dest.write_text(_download_workflow(workflows_repo, entry, token))
+            logger.info("Downloaded workflow %s from %s", entry["name"], workflows_repo)
 
 
 def parse_args(args=None, namespace=None):
@@ -264,6 +349,15 @@ def parse_args(args=None, namespace=None):
         help="Push branches to the remote (by default, nothing is pushed).",
     )
     parser.add_argument(
+        "-w",
+        "--workflows-repo",
+        dest="workflows_repo",
+        default=DEFAULT_WORKFLOWS_REPO,
+        help="The GitHub repo (in the format of owner/repo) to copy workflow "
+        f"templates from (default: {DEFAULT_WORKFLOWS_REPO}). "
+        "Pass an empty string to skip copying workflow templates.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         dest="verbose",
@@ -286,6 +380,7 @@ def main() -> int:
             branches=args.branches,
             protocol=args.protocol,
             push=args.push,
+            workflows_repo=args.workflows_repo,
         )
     except Exception as e:
         logger.error("Failed to create GitHub repo: %s", e, exc_info=args.verbose)
