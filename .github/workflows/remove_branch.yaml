@@ -5,14 +5,5 @@ on:
       timezone: 'America/Los_Angeles'
 jobs:
   remove_branch:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
-      - name: Remove Branches
-        run: | 
-          uvx --from github-rest-api@latest remove_branch \
-            --repo ${{ github.repository }} \
-            --pattern '^(?!main$)' \
-            --token ${{ secrets.ACTIONS_TOKEN }}
+    uses: legendu-net/.github/.github/workflows/remove_branch.yaml@main
+    secrets: inherit

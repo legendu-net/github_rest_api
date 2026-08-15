@@ -60,22 +60,7 @@ jobs:
     if: |
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    # The concurrency group above serializes every run, so a hung run would
-    # block all merges until the default 6h timeout.
-    timeout-minutes: 10
-    steps:
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR="/usr/local/bin" sh
-      - name: Auto Merge PR
-        # `--allowed-types` is intentionally left at the upstream default
-        # (build, chore, ci, docs, deps) so that only simple PRs auto-merge;
-        # anything substantive, `feat` and `fix` included, is merged by hand.
-        run: |
-          uvx --from github-rest-api@latest auto_merge_pull_request \
-            --authors dclong \
-            --approvers dclong 'claude[bot]' 'gemini-code-assist[bot]' \
-            --marker 'AUTO_MERGE_APPROVED' \
-            ${{ inputs.dry_run && '--dry-run' || '' }} \
-            --token ${{ secrets.ACTIONS_TOKEN }}
+    uses: legendu-net/.github/.github/workflows/auto_merge_pull_request.yaml@main
+    with:
+      dry_run: ${{ inputs.dry_run || false }}
+    secrets: inherit
