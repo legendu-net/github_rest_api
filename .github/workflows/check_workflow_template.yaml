@@ -1,0 +1,48 @@
+name: Check Workflow Templates
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/**
+      - github_rest_api/scripts/github/workflows/**
+
+jobs:
+  check_workflow_template:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Check workflow templates use .yaml extension
+      run: |
+        yml_files=$(find .github/workflows/ -name '*.yml')
+        if [ -n "$yml_files" ]; then
+          echo "The following workflow templates must use the .yaml extension instead of .yml:"
+          echo "$yml_files"
+          exit 1
+        fi
+    - name: Check bundled workflow templates are in sync with .github/workflows
+      run: |
+        # github_rest_api/scripts/github/workflows/ is the set of templates copied
+        # into repos created by create_github_repo. It must mirror .github/workflows/
+        # exactly, except for workflows that only make sense for this repo itself.
+        repo_only=(check_workflow_template.yaml)
+        status=0
+        for f in .github/workflows/*.yaml; do
+          name=$(basename "$f")
+          skip=false
+          for r in "${repo_only[@]}"; do
+            [ "$name" = "$r" ] && skip=true
+          done
+          [ "$skip" = true ] && continue
+          if ! diff -u "$f" "github_rest_api/scripts/github/workflows/$name"; then
+            echo "::error::github_rest_api/scripts/github/workflows/$name is out of sync with $f"
+            status=1
+          fi
+        done
+        for f in github_rest_api/scripts/github/workflows/*; do
+          name=$(basename "$f")
+          if [ ! -f ".github/workflows/$name" ]; then
+            echo "::error::github_rest_api/scripts/github/workflows/$name has no corresponding .github/workflows/$name"
+            status=1
+          fi
+        done
+        exit "$status"

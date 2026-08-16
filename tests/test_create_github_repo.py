@@ -4,7 +4,10 @@ import pytest
 from dulwich import porcelain
 from dulwich.refs import HEADREF
 
-from github_rest_api.scripts.github.create_github_repo import _init_local_repo
+from github_rest_api.scripts.github.create_github_repo import (
+    _add_workflow,
+    _init_local_repo,
+)
 
 KEPT_BRANCH = "kept"
 
@@ -22,7 +25,6 @@ def isolated_git_config(tmp_path, monkeypatch):
 def _init_local(dir_: Path, branches=("main",)) -> None:
     _init_local_repo(
         repo="owner/name",
-        language="",
         dir_=str(dir_),
         token="",
         protocol="git",
@@ -126,3 +128,50 @@ def test_init_local_repo_with_unborn_head_and_nothing_to_create(tmp_path):
     _init_local(dir_, branches=(KEPT_BRANCH,))
 
     assert _branches(dir_) == {KEPT_BRANCH}
+
+
+def test_add_workflow_copies_templates_and_skips_repo_only_ones(tmp_path):
+    workflow_dir = tmp_path / "templates"
+    workflow_dir.mkdir()
+    (workflow_dir / "lint.yaml").write_text("name: lint\n")
+    (workflow_dir / "check_workflow_template.yaml").write_text("name: repo-only\n")
+    dest = tmp_path / "repo"
+    dest.mkdir()
+
+    _add_workflow(dest, workflow_dir=workflow_dir)
+
+    copied = {p.name for p in (dest / ".github" / "workflows").iterdir()}
+    assert copied == {"lint.yaml"}
+
+
+def test_add_workflow_does_not_overwrite_existing_file(tmp_path):
+    workflow_dir = tmp_path / "templates"
+    workflow_dir.mkdir()
+    (workflow_dir / "lint.yaml").write_text("name: new\n")
+    dest = tmp_path / "repo"
+    dest_workflows = dest / ".github" / "workflows"
+    dest_workflows.mkdir(parents=True)
+    (dest_workflows / "lint.yaml").write_text("name: customized\n")
+
+    _add_workflow(dest, workflow_dir=workflow_dir)
+
+    assert (dest_workflows / "lint.yaml").read_text() == "name: customized\n"
+
+
+def test_add_workflow_raises_when_template_dir_missing(tmp_path):
+    dest = tmp_path / "repo"
+    dest.mkdir()
+
+    with pytest.raises(FileNotFoundError):
+        _add_workflow(dest, workflow_dir=tmp_path / "does-not-exist")
+
+
+def test_add_workflow_raises_when_template_dir_has_only_repo_only_workflows(tmp_path):
+    workflow_dir = tmp_path / "templates"
+    workflow_dir.mkdir()
+    (workflow_dir / "check_workflow_template.yaml").write_text("name: repo-only\n")
+    dest = tmp_path / "repo"
+    dest.mkdir()
+
+    with pytest.raises(FileNotFoundError):
+        _add_workflow(dest, workflow_dir=workflow_dir)
