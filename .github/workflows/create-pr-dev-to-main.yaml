@@ -5,5 +5,5 @@ on:
       - dev
 jobs:
   create_pr_dev_to_main:
-    uses: legendu-net/.github/.github/workflows/create_pr_dev_to_main.yaml@main
+    uses: legendu-net/.github/.github/workflows/create-pr-dev-to-main.yaml@main
     secrets: inherit
