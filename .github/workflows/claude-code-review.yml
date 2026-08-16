@@ -3,65 +3,17 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
-
-concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 jobs:
   claude-review:
-    # Only review non-draft PRs whose branch lives in this repository. A PR from
-    # a fork is attacker-controlled input, and reviewing one with the ACTIONS_TOKEN
-    # PAT below would let a crafted title/description prompt-inject the
-    # AUTO_MERGE_APPROVED marker into a comment attributed to an auto-merge approver.
-    if: |
-      github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.draft == false
-
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
       issues: write
+      pull-requests: write
       id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Run Claude Code Review
-        id: claude-review
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Post the review comment with a token that has write access. Using the
-          # ACTIONS_TOKEN PAT also makes the comment (and its AUTO_MERGE_APPROVED
-          # marker) come from dclong, who is in the auto-merge approver allowlist.
-          github_token: ${{ secrets.ACTIONS_TOKEN }}
-          # Force tag mode so the action creates and updates a PR comment with the
-          # review; without this the code-review run posts nothing.
-          track_progress: true
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: |
-            Review the pull request ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
-            with the /code-review:code-review command.
-
-            When the review is finished, decide whether this PR is safe to merge
-            automatically: it is safe only if the review surfaced no correctness bugs
-            and no other blocking issues (non-blocking style or cleanup suggestions do
-            not disqualify it). If and only if it is safe, end your review with this
-            token alone on its own final line, exactly and verbatim:
-            AUTO_MERGE_APPROVED
-            Do not write this token anywhere else in your review, and do not write it
-            at all if you found any blocking issue.
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+    uses: legendu-net/.github/.github/workflows/claude-code-review.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      draft: ${{ github.event.pull_request.draft }}
+      head_repo_full_name: ${{ github.event.pull_request.head.repo.full_name }}
+    secrets: inherit

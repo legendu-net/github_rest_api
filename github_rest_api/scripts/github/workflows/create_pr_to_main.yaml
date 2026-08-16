@@ -16,5 +16,5 @@ jobs:
           uvx --from github-rest-api@latest create_pull_request \
             --head-branch ${{ github.ref_name }} \
             --base-branch main \
-            --token ${{ secrets.GITHUBACTIONS }}
+            --token ${{ secrets.ACTIONS_TOKEN }}
 

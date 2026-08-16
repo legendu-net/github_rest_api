@@ -16,10 +16,10 @@ jobs:
         uv sync --all-extras
     - name: Check pyproject.toml formatting
       run: uv run pyproject-fmt --check pyproject.toml
-    - name: Check code format
+    - name: Check code formatting
       run: uv run ruff format --check ./
     - name: Lint with ruff
-      run: uv run ruff check github_rest_api/ tests/
+      run: uv run ruff check
     - name: Lint with Ty
       run: uv run ty check
     - name: Analyze Dependencies
