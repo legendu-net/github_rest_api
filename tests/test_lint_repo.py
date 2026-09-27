@@ -58,6 +58,16 @@ def test_list_tracked_files_ignores_untracked_files(tmp_path):
     assert list_tracked_files(tmp_path) == ["tracked.py"]
 
 
+def test_list_tracked_files_excludes_symlinks(tmp_path):
+    _init_repo(tmp_path, {"AGENTS.md": "# Agents\n"})
+    (tmp_path / "CLAUDE.md").symlink_to("AGENTS.md")
+    porcelain.add(str(tmp_path), paths=["CLAUDE.md"])
+    # The link is tracked by git, but only its target should be linted.
+    with Repo(str(tmp_path)) as repo:
+        assert b"CLAUDE.md" in repo.open_index()
+    assert list_tracked_files(tmp_path) == ["AGENTS.md"]
+
+
 def test_list_tracked_files_survives_a_non_utf8_filename(tmp_path):
     # Git tracks arbitrary byte sequences as filenames; decoding with
     # `surrogateescape` must not raise on one that isn't valid UTF-8. Written
