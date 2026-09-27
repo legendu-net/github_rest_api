@@ -363,7 +363,7 @@ def build_markdown_checks(files: Sequence[str], fix: bool = False) -> list[Check
     md_files = _files_matching(files, "*.md")
     if not md_files:
         return []
-    skill_files = [f for f in md_files if Path(f).name == "SKILL.md"]
+    skill_files = [f for f in md_files if Path(f).name in ("SKILL.md", "AGENTS.md")]
     other_files = [f for f in md_files if f not in skill_files]
     checks = []
     if other_files:
@@ -380,7 +380,7 @@ def build_markdown_checks(files: Sequence[str], fix: bool = False) -> list[Check
     if skill_files:
         checks.append(
             Check(
-                "markdown: mdformat (SKILL.md)",
+                "markdown: mdformat (SKILL.md/AGENTS.md)",
                 command=_cmd(
                     fix,
                     ["mdformat", "--number", *skill_files],
