@@ -10,17 +10,23 @@ from github_rest_api.scripts.lint_repo import (
     Check,
     _check_pep723_script_types,
     _has_pep723_header,
+    _has_test_function,
     _missing_tool,
     build_bash_checks,
     build_checks,
     build_fish_checks,
     build_golang_checks,
+    build_golang_test_checks,
     build_lua_checks,
     build_markdown_checks,
     build_python_project_checks,
+    build_python_project_test_checks,
     build_python_scripts_checks,
+    build_python_scripts_test_checks,
     build_rust_project_checks,
+    build_rust_project_test_checks,
     build_rust_scripts_checks,
+    build_test_checks,
     detect_languages,
     lint_repo,
     list_tracked_files,
@@ -742,3 +748,163 @@ def test_lint_repo_passes_on_missing_tool_and_fail_fast_through(
     _, kwargs = mock_run_checks.call_args
     assert kwargs["on_missing_tool"] == "skip"
     assert kwargs["fail_fast"] is True
+
+
+# --- --test / --test-only ---------------------------------------------------
+
+
+def test_has_test_function_true_for_a_pytest_style_function(tmp_path):
+    path = tmp_path / "test_foo.py"
+    path.write_text("def test_something():\n    assert True\n")
+    assert _has_test_function(path)
+
+
+def test_has_test_function_false_without_one(tmp_path):
+    path = tmp_path / "plain.py"
+    path.write_text("def helper():\n    return 1\n")
+    assert not _has_test_function(path)
+
+
+def test_has_test_function_missing_file_returns_false(tmp_path):
+    assert not _has_test_function(tmp_path / "does-not-exist.py")
+
+
+def test_build_python_project_test_checks():
+    checks = build_python_project_test_checks()
+    by_name = {c.name: c.command for c in checks}
+    # `uv sync --all-extras` is included so `--test-only` (which skips the
+    # lint checks' own sync step) still syncs extras a test might need.
+    assert by_name["python-project: uv sync"] == ["uv", "sync", "--all-extras"]
+    assert by_name["python-project: pytest"] == ["uv", "run", "pytest"]
+
+
+def test_build_python_scripts_test_checks_only_includes_files_with_tests(tmp_path):
+    (tmp_path / "plain.py").write_text("print('hi')\n")
+    (tmp_path / "test_tool.py").write_text("def test_it():\n    assert True\n")
+    checks = build_python_scripts_test_checks(["plain.py", "test_tool.py"], tmp_path)
+    names = [c.name for c in checks]
+    assert names == ["python-scripts: pytest (test_tool.py)"]
+    # No PEP 723 header, so no `--with-requirements`: `uv run --with-requirements`
+    # errors out on a script that doesn't have one (unlike `uv sync --script`).
+    assert checks[0].command == [
+        "uv",
+        "run",
+        "--with",
+        "pytest",
+        "pytest",
+        "test_tool.py",
+    ]
+    assert checks[0].requires == ["uv"]
+
+
+def test_build_python_scripts_test_checks_uses_with_requirements_for_pep723(tmp_path):
+    (tmp_path / "test_tool.py").write_text(
+        "# /// script\n# requires-python = '>=3.12'\n# ///\n"
+        "def test_it():\n    assert True\n"
+    )
+    checks = build_python_scripts_test_checks(["test_tool.py"], tmp_path)
+    assert checks[0].command == [
+        "uv",
+        "run",
+        "--with",
+        "pytest",
+        "--with-requirements",
+        "test_tool.py",
+        "pytest",
+        "test_tool.py",
+    ]
+
+
+def test_build_rust_project_test_checks():
+    checks = build_rust_project_test_checks()
+    assert len(checks) == 1
+    assert checks[0].command == ["cargo", "test", "--workspace"]
+
+
+def test_build_golang_test_checks_sets_goflags_env():
+    checks = build_golang_test_checks()
+    assert len(checks) == 1
+    assert checks[0].command == ["go", "test", "./..."]
+    assert checks[0].env == {"GOFLAGS": "-buildvcs=false"}
+
+
+def test_build_test_checks_python_project(tmp_path):
+    checks = build_test_checks({"python": "project"}, [], tmp_path)
+    assert [c.name for c in checks] == [
+        "python-project: uv sync",
+        "python-project: pytest",
+    ]
+
+
+def test_build_test_checks_rust_scripts_mode_gets_no_test_check(tmp_path):
+    # A loose .rs script has no `Cargo.toml`, so there's no `cargo test` to run.
+    assert build_test_checks({"rust": "scripts"}, ["a.rs"], tmp_path) == []
+
+
+def test_build_test_checks_dispatches_python_rust_golang(tmp_path):
+    languages = {"python": "project", "rust": "project", "golang": "module"}
+    checks = build_test_checks(languages, [], tmp_path)
+    names = [c.name for c in checks]
+    assert "python-project: pytest" in names
+    assert "rust-project: cargo test" in names
+    assert "golang: go test" in names
+
+
+def test_build_test_checks_bash_fish_lua_markdown_get_nothing(tmp_path):
+    languages = {
+        "bash": "scripts",
+        "fish": "scripts",
+        "lua": "scripts",
+        "markdown": "files",
+    }
+    files = ["a.sh", "a.fish", "a.lua", "a.md"]
+    assert build_test_checks(languages, files, tmp_path) == []
+
+
+@patch("github_rest_api.scripts.lint_repo.run_checks")
+def test_lint_repo_test_adds_test_checks_alongside_lint(mock_run_checks, tmp_path):
+    _init_repo(tmp_path, {"a.sh": ""})
+    lint_repo(root=tmp_path, test=True)
+    names = [c.name for c in mock_run_checks.call_args[0][0]]
+    # bash has no test convention, but its lint checks are still present.
+    assert "bash: shfmt" in names
+
+
+@patch("github_rest_api.scripts.lint_repo.run_checks")
+def test_lint_repo_test_only_skips_lint_checks(mock_run_checks, tmp_path):
+    _init_repo(tmp_path, {"pyproject.toml": ""})
+    lint_repo(root=tmp_path, test_only=True)
+    names = [c.name for c in mock_run_checks.call_args[0][0]]
+    assert names == ["python-project: uv sync", "python-project: pytest"]
+
+
+@patch("github_rest_api.scripts.lint_repo.run_checks")
+def test_lint_repo_test_only_without_a_test_convention_runs_nothing(
+    mock_run_checks, tmp_path
+):
+    _init_repo(tmp_path, {"a.sh": ""})
+    assert lint_repo(root=tmp_path, test_only=True) == []
+    mock_run_checks.assert_not_called()
+
+
+def test_parse_args_test_and_test_only_default_to_false():
+    args = parse_args([])
+    assert args.test is False
+    assert args.test_only is False
+
+
+def test_parse_args_test_and_test_only():
+    args = parse_args(["--test"])
+    assert args.test is True
+    assert args.test_only is False
+    args = parse_args(["--test-only"])
+    assert args.test_only is True
+
+
+@patch("github_rest_api.scripts.lint_repo.lint_repo", return_value=[])
+def test_main_passes_test_and_test_only_through(mock_lint_repo, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lint_repo", "--test", "--test-only"])
+    assert main() == 0
+    _, kwargs = mock_lint_repo.call_args
+    assert kwargs["test"] is True
+    assert kwargs["test_only"] is True
