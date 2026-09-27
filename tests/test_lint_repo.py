@@ -181,19 +181,23 @@ def test_build_rust_scripts_checks_includes_all_files():
     ]
 
 
-def test_build_markdown_checks_splits_skill_md(tmp_path):
+def test_build_markdown_checks_leaves_numbering_to_mdformat_toml(tmp_path):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "SKILL.md").write_text("")
     (tmp_path / "AGENTS.md").write_text("")
     (tmp_path / "README.md").write_text("")
     checks = build_markdown_checks(["README.md", "AGENTS.md", "docs/SKILL.md"])
     by_name = {c.name: c for c in checks}
-    assert by_name["markdown: mdformat"].command == ["mdformat", "--check", "README.md"]
-    assert by_name["markdown: mdformat (SKILL.md/AGENTS.md)"].command == [
+    # SKILL.md/AGENTS.md get no hard-coded `--number`: one mdformat check
+    # covers every file, and `.mdformat.toml` controls numbering.
+    assert [n for n in by_name if n.startswith("markdown: mdformat")] == [
+        "markdown: mdformat"
+    ]
+    assert by_name["markdown: mdformat"].command == [
         "mdformat",
         "--check",
-        "--number",
         "AGENTS.md",
+        "README.md",
         "docs/SKILL.md",
     ]
     assert by_name["markdown: codespell"].command == [
@@ -550,11 +554,10 @@ def test_build_markdown_checks_fix_mode(tmp_path):
         ["README.md", "AGENTS.md", "docs/SKILL.md"], fix=True
     )
     by_name = {c.name: c.command for c in checks}
-    assert by_name["markdown: mdformat"] == ["mdformat", "README.md"]
-    assert by_name["markdown: mdformat (SKILL.md/AGENTS.md)"] == [
+    assert by_name["markdown: mdformat"] == [
         "mdformat",
-        "--number",
         "AGENTS.md",
+        "README.md",
         "docs/SKILL.md",
     ]
     assert by_name["markdown: codespell"] == [
