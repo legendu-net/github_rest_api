@@ -14,10 +14,13 @@ check runs before reporting failures -- but all three are configurable:
   of the tools installed.
 - ``--fail-fast``: stop at the first fatal failure instead of always running
   everything.
+- ``--test``: also run each language's test suite, alongside linting.
+  ``--test-only`` runs just the tests, skipping lint checks entirely.
 """
 
 import argparse
 import os
+import re
 import shutil
 import subprocess as sp
 import sys
@@ -151,6 +154,19 @@ def _has_pep723_header(path: Path) -> bool:
     try:
         with path.open(encoding="utf-8", errors="ignore") as fin:
             return any(line.rstrip("\n") == "# /// script" for line in fin)
+    except OSError:
+        return False
+
+
+_TEST_FUNCTION = re.compile(r"^\s*def test_\w+\(", re.MULTILINE)
+
+
+def _has_test_function(path: Path) -> bool:
+    """Check whether a Python file defines at least one pytest-style test function."""
+    try:
+        return bool(
+            _TEST_FUNCTION.search(path.read_text(encoding="utf-8", errors="ignore"))
+        )
     except OSError:
         return False
 
@@ -429,6 +445,82 @@ def build_checks(
     return checks
 
 
+def build_python_project_test_checks() -> list[Check]:
+    return [
+        # `--test-only` skips `build_python_project_checks` entirely, whose
+        # own leading `uv sync --all-extras` this would otherwise rely on --
+        # without it, `uv run pytest`'s implicit sync only covers the
+        # default dependency group, not extras a test might need.
+        Check("python-project: uv sync", command=["uv", "sync", "--all-extras"]),
+        Check("python-project: pytest", command=["uv", "run", "pytest"]),
+    ]
+
+
+def build_python_scripts_test_checks(files: Sequence[str], root: Path) -> list[Check]:
+    checks = []
+    for script in _files_matching(files, "*.py"):
+        if not _has_test_function(root / script):
+            continue
+        command = ["uv", "run", "--with", "pytest"]
+        # `--with-requirements <script>` additionally installs the script's
+        # own PEP 723 dependencies -- but unlike `uv sync --script`, it
+        # errors out on a script that has no PEP 723 header at all, so it's
+        # only added when there is one.
+        if _has_pep723_header(root / script):
+            command += ["--with-requirements", script]
+        command += ["pytest", script]
+        checks.append(
+            Check(
+                f"python-scripts: pytest ({script})", command=command, requires=["uv"]
+            )
+        )
+    return checks
+
+
+def build_rust_project_test_checks() -> list[Check]:
+    return [Check("rust-project: cargo test", command=["cargo", "test", "--workspace"])]
+
+
+def build_golang_test_checks() -> list[Check]:
+    return [
+        Check(
+            "golang: go test",
+            command=["go", "test", "./..."],
+            env={"GOFLAGS": "-buildvcs=false"},
+        )
+    ]
+
+
+def build_test_checks(
+    languages: dict[str, str], files: Sequence[str], root: Path
+) -> list[Check]:
+    """Build the list of test-running checks for the detected languages.
+
+    Only languages with a standard, unambiguous test convention get one:
+    python, rust (project mode -- a loose .rs script has no natural "cargo
+    test" without a `Cargo.toml`), and golang. Bash, fish, lua and markdown
+    have no test convention this can assume, so `--test`/`--test-only` add
+    nothing for them.
+
+    :param languages: A mapping of language name to detection mode, as
+        returned by `detect_languages`.
+    :param files: The relative paths of all git-tracked files in the repo.
+    :param root: The root directory of the repository being linted.
+    """
+    checks: list[Check] = []
+    if "python" in languages:
+        checks += (
+            build_python_project_test_checks()
+            if languages["python"] == "project"
+            else build_python_scripts_test_checks(files, root)
+        )
+    if languages.get("rust") == "project":
+        checks += build_rust_project_test_checks()
+    if "golang" in languages:
+        checks += build_golang_test_checks()
+    return checks
+
+
 def _missing_tool(tool: str) -> str | None:
     return None if shutil.which(tool) else tool
 
@@ -533,6 +625,8 @@ def lint_repo(
     on_missing_tool: OnMissingTool = "fail",
     fail_fast: bool = False,
     fix: bool = False,
+    test: bool = False,
+    test_only: bool = False,
 ) -> list[str]:
     """Detect the languages of a git repository and lint each of them.
 
@@ -546,6 +640,10 @@ def lint_repo(
         every check and reporting all failures at the end (the default).
     :param fix: Autofix what each tool can, instead of only checking: see
         `build_checks`.
+    :param test: Also run each language's test suite, alongside linting: see
+        `build_test_checks`.
+    :param test_only: Run only each language's test suite; skip linting
+        entirely. Implies `test`.
     :return: The names of the fatal checks that failed (empty if everything
         passed).
     """
@@ -566,15 +664,19 @@ def lint_repo(
             if language in languages
         }
     if not selected:
-        print("No supported languages detected; nothing to lint.")
+        print("No supported languages detected; nothing to do.")
         return []
     print(
         "Detected languages:",
         ", ".join(f"{language} ({mode})" for language, mode in selected.items()),
     )
-    checks = build_checks(selected, files, root, fix)
+    checks: list[Check] = []
+    if not test_only:
+        checks += build_checks(selected, files, root, fix)
+    if test or test_only:
+        checks += build_test_checks(selected, files, root)
     if not checks:
-        print("No lint checks to run.")
+        print("No checks to run.")
         return []
     return run_checks(
         checks, cwd=root, on_missing_tool=on_missing_tool, fail_fast=fail_fast
@@ -645,6 +747,25 @@ def parse_args(args=None, namespace=None) -> argparse.Namespace:
             "either way. By default (this flag omitted), nothing is changed."
         ),
     )
+    parser.add_argument(
+        "--test",
+        dest="test",
+        action="store_true",
+        help=(
+            "Also run each language's test suite, in addition to linting. "
+            "Only python, rust (project mode) and golang have a standard "
+            "test convention to run this way; other languages are unaffected."
+        ),
+    )
+    parser.add_argument(
+        "--test-only",
+        dest="test_only",
+        action="store_true",
+        help=(
+            "Run only each language's test suite; skip linting entirely. "
+            "Implies --test."
+        ),
+    )
     return parser.parse_args(args=args, namespace=namespace)
 
 
@@ -657,6 +778,8 @@ def main() -> int:
             on_missing_tool=args.on_missing_tool,
             fail_fast=args.fail_fast,
             fix=args.fix,
+            test=args.test,
+            test_only=args.test_only,
         )
     except Exception as e:
         print(str(e), file=sys.stderr)
