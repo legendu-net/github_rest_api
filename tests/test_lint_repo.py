@@ -438,6 +438,142 @@ def test_build_checks_dispatches_project_modes(tmp_path):
     assert "lua: selene" in names
 
 
+# --- --fix mode: each builder's autofix command vs. its check-only one -----
+
+
+def test_build_python_project_checks_fix_mode():
+    by_name = {c.name: c.command for c in build_python_project_checks(fix=True)}
+    assert by_name["python-project: pyproject-fmt"] == [
+        "uv",
+        "run",
+        "pyproject-fmt",
+        "pyproject.toml",
+    ]
+    assert by_name["python-project: ruff format"] == [
+        "uv",
+        "run",
+        "ruff",
+        "format",
+        "./",
+    ]
+    assert by_name["python-project: ruff check"] == [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--fix",
+    ]
+    # No fix mode for these two: unchanged.
+    assert by_name["python-project: ty check"] == ["uv", "run", "ty", "check"]
+    assert by_name["python-project: deptry"] == ["uv", "run", "deptry", "."]
+
+
+def test_build_python_scripts_checks_fix_mode(tmp_path):
+    (tmp_path / "a.py").write_text("")
+    checks = build_python_scripts_checks(["a.py"], tmp_path, fix=True)
+    by_name = {c.name: c.command for c in checks}
+    assert by_name["python-scripts: ruff format"] == ["ruff", "format", "."]
+    assert by_name["python-scripts: ruff check"] == [
+        "ruff",
+        "check",
+        "--extend-select",
+        "I,RUF022",
+        "--fix",
+        ".",
+    ]
+
+
+def test_build_rust_project_checks_fix_mode():
+    checks = build_rust_project_checks(fix=True)
+    assert checks[0].command == ["cargo", "fmt", "--all"]
+
+
+def test_build_rust_scripts_checks_fix_mode():
+    checks = build_rust_scripts_checks(["a.rs"], fix=True)
+    assert checks[0].command == ["rustfmt", "--edition", "2024", "a.rs"]
+
+
+def test_build_golang_checks_fix_mode():
+    by_name = {c.name: c.command for c in build_golang_checks(fix=True)}
+    assert by_name["golang: fmt"] == ["golangci-lint", "fmt"]
+    assert by_name["golang: lint"] == ["golangci-lint", "run", "--fix"]
+
+
+def test_build_bash_checks_fix_mode():
+    checks = build_bash_checks(["a.sh"], fix=True)
+    by_name = {c.name: c.command for c in checks}
+    assert by_name["bash: shfmt"] == ["shfmt", "-i", "4", "-ci", "-w", "a.sh"]
+    # shellcheck has no autofix: unchanged.
+    assert by_name["bash: shellcheck"] == ["shellcheck", "a.sh"]
+
+
+def test_build_fish_checks_fix_mode():
+    checks = build_fish_checks(["a.fish"], fix=True)
+    by_name = {c.name: c.command for c in checks}
+    assert by_name["fish: fish_indent"] == ["fish_indent", "-w", "a.fish"]
+    # `fish -n` has no autofix: unchanged.
+    assert by_name["fish: fish -n (a.fish)"] == ["fish", "-n", "a.fish"]
+
+
+def test_build_lua_checks_fix_mode():
+    by_name = {c.name: c.command for c in build_lua_checks(fix=True)}
+    assert by_name["lua: stylua"] == ["stylua", "."]
+    # selene has no autofix: unchanged.
+    assert by_name["lua: selene"] == ["selene", "."]
+
+
+def test_build_markdown_checks_fix_mode(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "SKILL.md").write_text("")
+    (tmp_path / "README.md").write_text("")
+    checks = build_markdown_checks(["README.md", "docs/SKILL.md"], fix=True)
+    by_name = {c.name: c.command for c in checks}
+    assert by_name["markdown: mdformat"] == ["mdformat", "README.md"]
+    assert by_name["markdown: mdformat (SKILL.md)"] == [
+        "mdformat",
+        "--number",
+        "docs/SKILL.md",
+    ]
+    assert by_name["markdown: codespell"] == [
+        "codespell",
+        "-w",
+        "README.md",
+        "docs/SKILL.md",
+    ]
+    # lychee has no autofix and stays non-fatal: unchanged.
+    lychee = next(c for c in checks if c.name == "markdown: lychee")
+    assert lychee.command == ["lychee", "--no-progress", "README.md", "docs/SKILL.md"]
+    assert lychee.fatal is False
+
+
+def test_build_checks_threads_fix_through(tmp_path):
+    checks = build_checks({"bash": "scripts"}, ["a.sh"], tmp_path, fix=True)
+    shfmt = next(c for c in checks if c.name == "bash: shfmt")
+    assert shfmt.command == ["shfmt", "-i", "4", "-ci", "-w", "a.sh"]
+
+
+@patch("github_rest_api.scripts.lint_repo.run_checks")
+def test_lint_repo_passes_fix_through(mock_run_checks, tmp_path):
+    _init_repo(tmp_path, {"a.sh": ""})
+    lint_repo(root=tmp_path, fix=True)
+    checks = mock_run_checks.call_args[0][0]
+    shfmt = next(c for c in checks if c.name == "bash: shfmt")
+    assert shfmt.command == ["shfmt", "-i", "4", "-ci", "-w", "a.sh"]
+
+
+def test_parse_args_fix_defaults_to_false():
+    assert parse_args([]).fix is False
+    assert parse_args(["--fix"]).fix is True
+
+
+@patch("github_rest_api.scripts.lint_repo.lint_repo", return_value=[])
+def test_main_passes_fix_through(mock_lint_repo, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lint_repo", "--fix"])
+    assert main() == 0
+    _, kwargs = mock_lint_repo.call_args
+    assert kwargs["fix"] is True
+
+
 def test_missing_tool_reports_the_tool_name():
     with patch("github_rest_api.scripts.lint_repo.shutil.which", return_value=None):
         assert _missing_tool("shfmt") == "shfmt"

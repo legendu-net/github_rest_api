@@ -3,12 +3,17 @@
 This mirrors the ``detect`` + per-language lint jobs of ``lint.yaml`` (a
 reusable GitHub Actions workflow), but as a single script meant to run
 wherever the required tools already are -- a slim, everything-installed
-container image in CI, or a developer's own toolbox locally. By default, a
-missing tool fails its check and every check runs before reporting failures,
-but both are configurable (``--on-missing-tool``, ``--fail-fast``): a
-developer running this against a toolbox that only has some of the tools may
-want missing ones skipped rather than failed, and CI may want to stop at the
-first failure instead of always running everything.
+container image in CI, or a developer's own toolbox locally. By default it
+only checks (nothing is changed), a missing tool fails its check, and every
+check runs before reporting failures -- but all three are configurable:
+
+- ``--fix``: autofix what each tool can (formatting, safe lint fixes)
+  instead of only checking, for local use.
+- ``--on-missing-tool skip``: skip a check instead of failing it when its
+  tool isn't on PATH, e.g. against a developer's toolbox that only has some
+  of the tools installed.
+- ``--fail-fast``: stop at the first fatal failure instead of always running
+  everything.
 """
 
 import argparse
@@ -98,6 +103,16 @@ def _files_matching(files: Sequence[str], pattern: str) -> list[str]:
     return sorted(f for f in files if Path(f).match(pattern))
 
 
+def _cmd(fix: bool, fix_command: list[str], check_command: list[str]) -> list[str]:
+    """Pick a check's command for `--fix` mode or plain (read-only) checking.
+
+    Not every tool has a fix mode (e.g. a type checker or a linter with no
+    safe autofix), so a builder simply doesn't call this for those and uses
+    the same command either way.
+    """
+    return fix_command if fix else check_command
+
+
 @dataclass
 class Check:
     """A single lint step.
@@ -161,31 +176,55 @@ def _check_pep723_script_types(script: str, cwd: Path) -> bool:
     return sp.run(["ty", "check", "--python", python, script], cwd=cwd).returncode == 0
 
 
-def build_python_project_checks() -> list[Check]:
+def build_python_project_checks(fix: bool = False) -> list[Check]:
     return [
         Check("python-project: uv sync", command=["uv", "sync", "--all-extras"]),
         Check(
             "python-project: pyproject-fmt",
-            command=["uv", "run", "pyproject-fmt", "--check", "pyproject.toml"],
+            command=_cmd(
+                fix,
+                ["uv", "run", "pyproject-fmt", "pyproject.toml"],
+                ["uv", "run", "pyproject-fmt", "--check", "pyproject.toml"],
+            ),
         ),
         Check(
             "python-project: ruff format",
-            command=["uv", "run", "ruff", "format", "--check", "./"],
+            command=_cmd(
+                fix,
+                ["uv", "run", "ruff", "format", "./"],
+                ["uv", "run", "ruff", "format", "--check", "./"],
+            ),
         ),
-        Check("python-project: ruff check", command=["uv", "run", "ruff", "check"]),
+        Check(
+            "python-project: ruff check",
+            command=_cmd(
+                fix,
+                ["uv", "run", "ruff", "check", "--fix"],
+                ["uv", "run", "ruff", "check"],
+            ),
+        ),
         Check("python-project: ty check", command=["uv", "run", "ty", "check"]),
         Check("python-project: deptry", command=["uv", "run", "deptry", "."]),
     ]
 
 
-def build_python_scripts_checks(files: Sequence[str], root: Path) -> list[Check]:
+def build_python_scripts_checks(
+    files: Sequence[str], root: Path, fix: bool = False
+) -> list[Check]:
     checks = [
         Check(
-            "python-scripts: ruff format", command=["ruff", "format", "--check", "."]
+            "python-scripts: ruff format",
+            command=_cmd(
+                fix, ["ruff", "format", "."], ["ruff", "format", "--check", "."]
+            ),
         ),
         Check(
             "python-scripts: ruff check",
-            command=["ruff", "check", "--extend-select", "I,RUF022", "."],
+            command=_cmd(
+                fix,
+                ["ruff", "check", "--extend-select", "I,RUF022", "--fix", "."],
+                ["ruff", "check", "--extend-select", "I,RUF022", "."],
+            ),
         ),
     ]
     py_files = _files_matching(files, "*.py")
@@ -202,68 +241,105 @@ def build_python_scripts_checks(files: Sequence[str], root: Path) -> list[Check]
     return checks
 
 
-def build_rust_project_checks() -> list[Check]:
+def build_rust_project_checks(fix: bool = False) -> list[Check]:
     return [
         Check(
             "rust-project: cargo fmt",
-            command=["cargo", "fmt", "--all", "--", "--check"],
+            command=_cmd(
+                fix,
+                ["cargo", "fmt", "--all"],
+                ["cargo", "fmt", "--all", "--", "--check"],
+            ),
         )
     ]
 
 
-def build_rust_scripts_checks(files: Sequence[str]) -> list[Check]:
+def build_rust_scripts_checks(files: Sequence[str], fix: bool = False) -> list[Check]:
     rs_files = _files_matching(files, "*.rs")
     if not rs_files:
         return []
     return [
         Check(
             "rust-scripts: rustfmt",
-            command=["rustfmt", "--check", "--edition", "2024", *rs_files],
+            command=_cmd(
+                fix,
+                ["rustfmt", "--edition", "2024", *rs_files],
+                ["rustfmt", "--check", "--edition", "2024", *rs_files],
+            ),
         )
     ]
 
 
-def build_golang_checks() -> list[Check]:
+def build_golang_checks(fix: bool = False) -> list[Check]:
     return [
-        Check("golang: fmt", command=["golangci-lint", "fmt", "-d"]),
+        Check(
+            "golang: fmt",
+            command=_cmd(fix, ["golangci-lint", "fmt"], ["golangci-lint", "fmt", "-d"]),
+        ),
         Check(
             "golang: lint",
-            command=["golangci-lint", "run"],
+            command=_cmd(
+                fix,
+                ["golangci-lint", "run", "--fix"],
+                ["golangci-lint", "run"],
+            ),
             env={"GOFLAGS": "-buildvcs=false"},
         ),
     ]
 
 
-def build_bash_checks(files: Sequence[str]) -> list[Check]:
+def build_bash_checks(files: Sequence[str], fix: bool = False) -> list[Check]:
     sh_files = _files_matching(files, "*.sh")
     if not sh_files:
         return []
     return [
-        Check("bash: shfmt", command=["shfmt", "-i", "4", "-ci", "-d", *sh_files]),
+        Check(
+            "bash: shfmt",
+            command=_cmd(
+                fix,
+                ["shfmt", "-i", "4", "-ci", "-w", *sh_files],
+                ["shfmt", "-i", "4", "-ci", "-d", *sh_files],
+            ),
+        ),
+        # shellcheck has no autofix; it runs the same way in --fix mode.
         Check("bash: shellcheck", command=["shellcheck", *sh_files]),
     ]
 
 
-def build_fish_checks(files: Sequence[str]) -> list[Check]:
+def build_fish_checks(files: Sequence[str], fix: bool = False) -> list[Check]:
     fish_files = _files_matching(files, "*.fish")
     if not fish_files:
         return []
-    checks = [Check("fish: fish_indent", command=["fish_indent", "-c", *fish_files])]
+    checks = [
+        Check(
+            "fish: fish_indent",
+            command=_cmd(
+                fix,
+                ["fish_indent", "-w", *fish_files],
+                ["fish_indent", "-c", *fish_files],
+            ),
+        )
+    ]
     # `fish -n a b` only checks `a` (`b` is passed to it as an argument), so
     # each file needs its own invocation, unlike the other xargs-driven checks.
+    # `fish -n` is a syntax check with no autofix; it's the same in --fix mode.
     for f in fish_files:
         checks.append(Check(f"fish: fish -n ({f})", command=["fish", "-n", f]))
     return checks
 
 
-def build_lua_checks() -> list[Check]:
+def build_lua_checks(fix: bool = False) -> list[Check]:
     return [
-        Check("lua: stylua", command=["stylua", "--check", "."]),
+        Check(
+            "lua: stylua",
+            command=_cmd(fix, ["stylua", "."], ["stylua", "--check", "."]),
+        ),
+        # selene has no autofix; it runs the same way in --fix mode.
         Check("lua: selene", command=["selene", "."]),
     ]
 
 
-def build_markdown_checks(files: Sequence[str]) -> list[Check]:
+def build_markdown_checks(files: Sequence[str], fix: bool = False) -> list[Check]:
     # Deliberately scoped to git-tracked files, like every other check here,
     # rather than the raw filesystem glob `./**/*.md` the original workflow's
     # lychee-action step used -- so an untracked/generated .md file (e.g. in
@@ -276,16 +352,34 @@ def build_markdown_checks(files: Sequence[str]) -> list[Check]:
     checks = []
     if other_files:
         checks.append(
-            Check("markdown: mdformat", command=["mdformat", "--check", *other_files])
+            Check(
+                "markdown: mdformat",
+                command=_cmd(
+                    fix,
+                    ["mdformat", *other_files],
+                    ["mdformat", "--check", *other_files],
+                ),
+            )
         )
     if skill_files:
         checks.append(
             Check(
                 "markdown: mdformat (SKILL.md)",
-                command=["mdformat", "--check", "--number", *skill_files],
+                command=_cmd(
+                    fix,
+                    ["mdformat", "--number", *skill_files],
+                    ["mdformat", "--check", "--number", *skill_files],
+                ),
             )
         )
-    checks.append(Check("markdown: codespell", command=["codespell", *md_files]))
+    checks.append(
+        Check(
+            "markdown: codespell",
+            command=_cmd(fix, ["codespell", "-w", *md_files], ["codespell", *md_files]),
+        )
+    )
+    # lychee has no autofix (it's a link checker); it runs the same, and
+    # stays non-fatal, in --fix mode.
     checks.append(
         Check(
             "markdown: lychee",
@@ -297,7 +391,7 @@ def build_markdown_checks(files: Sequence[str]) -> list[Check]:
 
 
 def build_checks(
-    languages: dict[str, str], files: Sequence[str], root: Path
+    languages: dict[str, str], files: Sequence[str], root: Path, fix: bool = False
 ) -> list[Check]:
     """Build the list of checks to run for the detected languages.
 
@@ -305,30 +399,33 @@ def build_checks(
         returned by `detect_languages`.
     :param files: The relative paths of all git-tracked files in the repo.
     :param root: The root directory of the repository being linted.
+    :param fix: Autofix what each tool can (formatting, safe lint fixes)
+        instead of only checking. A tool with no fix mode (a type checker, a
+        linter with no safe autofix, a link checker) runs the same either way.
     """
     checks: list[Check] = []
     if "python" in languages:
         checks += (
-            build_python_project_checks()
+            build_python_project_checks(fix)
             if languages["python"] == "project"
-            else build_python_scripts_checks(files, root)
+            else build_python_scripts_checks(files, root, fix)
         )
     if "rust" in languages:
         checks += (
-            build_rust_project_checks()
+            build_rust_project_checks(fix)
             if languages["rust"] == "project"
-            else build_rust_scripts_checks(files)
+            else build_rust_scripts_checks(files, fix)
         )
     if "golang" in languages:
-        checks += build_golang_checks()
+        checks += build_golang_checks(fix)
     if "bash" in languages:
-        checks += build_bash_checks(files)
+        checks += build_bash_checks(files, fix)
     if "fish" in languages:
-        checks += build_fish_checks(files)
+        checks += build_fish_checks(files, fix)
     if "lua" in languages:
-        checks += build_lua_checks()
+        checks += build_lua_checks(fix)
     if "markdown" in languages:
-        checks += build_markdown_checks(files)
+        checks += build_markdown_checks(files, fix)
     return checks
 
 
@@ -435,6 +532,7 @@ def lint_repo(
     languages: Sequence[str] | None = None,
     on_missing_tool: OnMissingTool = "fail",
     fail_fast: bool = False,
+    fix: bool = False,
 ) -> list[str]:
     """Detect the languages of a git repository and lint each of them.
 
@@ -446,6 +544,8 @@ def lint_repo(
         `run_check`.
     :param fail_fast: Stop at the first fatal failure instead of running
         every check and reporting all failures at the end (the default).
+    :param fix: Autofix what each tool can, instead of only checking: see
+        `build_checks`.
     :return: The names of the fatal checks that failed (empty if everything
         passed).
     """
@@ -472,7 +572,7 @@ def lint_repo(
         "Detected languages:",
         ", ".join(f"{language} ({mode})" for language, mode in selected.items()),
     )
-    checks = build_checks(selected, files, root)
+    checks = build_checks(selected, files, root, fix)
     if not checks:
         print("No lint checks to run.")
         return []
@@ -534,6 +634,17 @@ def parse_args(args=None, namespace=None) -> argparse.Namespace:
             "every check runs and all failures are reported at the end."
         ),
     )
+    parser.add_argument(
+        "--fix",
+        dest="fix",
+        action="store_true",
+        help=(
+            "Autofix what each tool can (formatting, safe lint fixes) instead "
+            "of only checking. A tool with no fix mode (a type checker, a "
+            "linter with no safe autofix, a link checker) runs the same "
+            "either way. By default (this flag omitted), nothing is changed."
+        ),
+    )
     return parser.parse_args(args=args, namespace=namespace)
 
 
@@ -545,6 +656,7 @@ def main() -> int:
             languages=args.languages,
             on_missing_tool=args.on_missing_tool,
             fail_fast=args.fail_fast,
+            fix=args.fix,
         )
     except Exception as e:
         print(str(e), file=sys.stderr)
