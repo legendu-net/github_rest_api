@@ -174,18 +174,21 @@ def test_build_rust_scripts_checks_includes_all_files():
 def test_build_markdown_checks_splits_skill_md(tmp_path):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "SKILL.md").write_text("")
+    (tmp_path / "AGENTS.md").write_text("")
     (tmp_path / "README.md").write_text("")
-    checks = build_markdown_checks(["README.md", "docs/SKILL.md"])
+    checks = build_markdown_checks(["README.md", "AGENTS.md", "docs/SKILL.md"])
     by_name = {c.name: c for c in checks}
     assert by_name["markdown: mdformat"].command == ["mdformat", "--check", "README.md"]
-    assert by_name["markdown: mdformat (SKILL.md)"].command == [
+    assert by_name["markdown: mdformat (SKILL.md/AGENTS.md)"].command == [
         "mdformat",
         "--check",
         "--number",
+        "AGENTS.md",
         "docs/SKILL.md",
     ]
     assert by_name["markdown: codespell"].command == [
         "codespell",
+        "AGENTS.md",
         "README.md",
         "docs/SKILL.md",
     ]
@@ -531,24 +534,35 @@ def test_build_lua_checks_fix_mode():
 def test_build_markdown_checks_fix_mode(tmp_path):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "SKILL.md").write_text("")
+    (tmp_path / "AGENTS.md").write_text("")
     (tmp_path / "README.md").write_text("")
-    checks = build_markdown_checks(["README.md", "docs/SKILL.md"], fix=True)
+    checks = build_markdown_checks(
+        ["README.md", "AGENTS.md", "docs/SKILL.md"], fix=True
+    )
     by_name = {c.name: c.command for c in checks}
     assert by_name["markdown: mdformat"] == ["mdformat", "README.md"]
-    assert by_name["markdown: mdformat (SKILL.md)"] == [
+    assert by_name["markdown: mdformat (SKILL.md/AGENTS.md)"] == [
         "mdformat",
         "--number",
+        "AGENTS.md",
         "docs/SKILL.md",
     ]
     assert by_name["markdown: codespell"] == [
         "codespell",
         "-w",
+        "AGENTS.md",
         "README.md",
         "docs/SKILL.md",
     ]
     # lychee has no autofix and stays non-fatal: unchanged.
     lychee = next(c for c in checks if c.name == "markdown: lychee")
-    assert lychee.command == ["lychee", "--no-progress", "README.md", "docs/SKILL.md"]
+    assert lychee.command == [
+        "lychee",
+        "--no-progress",
+        "AGENTS.md",
+        "README.md",
+        "docs/SKILL.md",
+    ]
     assert lychee.fatal is False
 
 
