@@ -22,6 +22,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess as sp
 import sys
 from collections.abc import Callable, Sequence
@@ -29,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 
+from dulwich.index import IndexEntry
 from dulwich.repo import Repo
 
 #: The outcome of running one check.
@@ -44,6 +46,12 @@ LANGUAGES = ["python", "rust", "golang", "bash", "fish", "lua", "markdown"]
 def list_tracked_files(root: Path) -> list[str]:
     """List all git-tracked files in a repository.
 
+    Symbolic links are excluded: a link's content is linted through its
+    target (when tracked), and linting the link too would run every check
+    twice on the same content -- or, worse, with conflicting options (e.g. a
+    `CLAUDE.md` -> `AGENTS.md` link would get a different mdformat flavor than
+    its target).
+
     :param root: The root directory of the git repository (not an arbitrary
         subdirectory of one -- the returned paths, and every command a check
         later runs, are relative to this exact directory).
@@ -54,7 +62,10 @@ def list_tracked_files(root: Path) -> list[str]:
         # `surrogateescape` so a non-UTF-8 filename (which git tracks fine)
         # doesn't crash the whole run; it just won't print legibly.
         return sorted(
-            name.decode(errors="surrogateescape") for name in repo.open_index()
+            name.decode(errors="surrogateescape")
+            for name, entry in repo.open_index().items()
+            # A conflicted entry (mid-merge) has no single mode; keep it.
+            if not (isinstance(entry, IndexEntry) and stat.S_ISLNK(entry.mode))
         )
     finally:
         repo.close()
