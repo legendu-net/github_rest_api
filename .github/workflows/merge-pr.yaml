@@ -42,13 +42,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-concurrency:
-  # Every run rescans all open PRs, so overlapping runs are pure duplicate work
-  # and the newest run always sees the freshest state. Do not cancel in
-  # progress: a run cancelled midway through the merge API call is worse than a
-  # redundant one.
-  group: merge-pull-request
-  cancel-in-progress: false
 jobs:
   merge_pull_request:
     # A triggering workflow that failed, was cancelled or was skipped left the
@@ -58,6 +51,15 @@ jobs:
     if: |
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
+    concurrency:
+      # Every run rescans all open PRs, so overlapping runs are pure duplicate
+      # work and the newest run always sees the freshest state. Do not cancel
+      # in progress: a run cancelled midway through the merge API call is worse
+      # than a redundant one. This is set on the job rather than the workflow
+      # so that a run whose `if` skips the job never joins the group, where it
+      # would replace (cancel) another PR's pending merge run.
+      group: merge-pull-request
+      cancel-in-progress: false
     uses: legendu-net/.github/.github/workflows/merge-pr.yaml@main
     with:
       dry_run: ${{ inputs.dry_run || false }}
