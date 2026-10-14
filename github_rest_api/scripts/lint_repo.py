@@ -49,8 +49,8 @@ def list_tracked_files(root: Path) -> list[str]:
     Symbolic links are excluded: a link's content is linted through its
     target (when tracked), and linting the link too would run every check
     twice on the same content -- or, worse, with conflicting options (e.g. a
-    `CLAUDE.md` -> `AGENTS.md` link would get a different mdformat flavor than
-    its target).
+    link in another directory could pick up a different `.mdformat.toml`
+    than its target).
 
     :param root: The root directory of the git repository (not an arbitrary
         subdirectory of one -- the returned paths, and every command a check
@@ -374,31 +374,17 @@ def build_markdown_checks(files: Sequence[str], fix: bool = False) -> list[Check
     md_files = _files_matching(files, "*.md")
     if not md_files:
         return []
-    skill_files = [f for f in md_files if Path(f).name in ("SKILL.md", "AGENTS.md")]
-    other_files = [f for f in md_files if f not in skill_files]
-    checks = []
-    if other_files:
-        checks.append(
-            Check(
-                "markdown: mdformat",
-                command=_cmd(
-                    fix,
-                    ["mdformat", *other_files],
-                    ["mdformat", "--check", *other_files],
-                ),
-            )
+    # Options such as `--number` are left to the repository's own
+    # `.mdformat.toml` (which mdformat looks up per file), rather than being
+    # hard-coded here.
+    checks = [
+        Check(
+            "markdown: mdformat",
+            command=_cmd(
+                fix, ["mdformat", *md_files], ["mdformat", "--check", *md_files]
+            ),
         )
-    if skill_files:
-        checks.append(
-            Check(
-                "markdown: mdformat (SKILL.md/AGENTS.md)",
-                command=_cmd(
-                    fix,
-                    ["mdformat", "--number", *skill_files],
-                    ["mdformat", "--check", "--number", *skill_files],
-                ),
-            )
-        )
+    ]
     checks.append(
         Check(
             "markdown: codespell",
