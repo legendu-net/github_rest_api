@@ -209,7 +209,7 @@ def test_build_markdown_checks_leaves_numbering_to_mdformat_toml(tmp_path):
 
 
 def test_build_markdown_checks_lychee_is_non_fatal():
-    checks = build_markdown_checks(["README.md"])
+    checks = build_markdown_checks(["README.md"], check_links=True)
     lychee = next(c for c in checks if c.name == "markdown: lychee")
     assert lychee.fatal is False
 
@@ -551,7 +551,7 @@ def test_build_markdown_checks_fix_mode(tmp_path):
     (tmp_path / "AGENTS.md").write_text("")
     (tmp_path / "README.md").write_text("")
     checks = build_markdown_checks(
-        ["README.md", "AGENTS.md", "docs/SKILL.md"], fix=True
+        ["README.md", "AGENTS.md", "docs/SKILL.md"], fix=True, check_links=True
     )
     by_name = {c.name: c.command for c in checks}
     assert by_name["markdown: mdformat"] == [
@@ -935,3 +935,32 @@ def test_main_passes_test_and_test_only_through(mock_lint_repo, monkeypatch):
     _, kwargs = mock_lint_repo.call_args
     assert kwargs["test"] is True
     assert kwargs["test_only"] is True
+
+
+def test_build_markdown_checks_skips_lychee_by_default():
+    checks = build_markdown_checks(["README.md"])
+    assert [c.name for c in checks] == ["markdown: mdformat", "markdown: codespell"]
+
+
+@patch("github_rest_api.scripts.lint_repo.run_checks", return_value=[])
+@pytest.mark.parametrize("check_links", [False, True])
+def test_lint_repo_check_links(mock_run_checks, tmp_path, check_links):
+    with patch(
+        "github_rest_api.scripts.lint_repo.list_tracked_files",
+        return_value=["README.md"],
+    ):
+        lint_repo(root=tmp_path, check_links=check_links)
+    checks = mock_run_checks.call_args.args[0]
+    assert any(c.name == "markdown: lychee" for c in checks) is check_links
+
+
+def test_parse_args_check_links():
+    assert parse_args([]).check_links is False
+    assert parse_args(["--check-links"]).check_links is True
+
+
+@patch("github_rest_api.scripts.lint_repo.lint_repo", return_value=[])
+def test_main_passes_check_links_through(mock_lint_repo, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lint_repo", "--check-links"])
+    assert main() == 0
+    assert mock_lint_repo.call_args.kwargs["check_links"] is True

@@ -366,7 +366,9 @@ def build_lua_checks(fix: bool = False) -> list[Check]:
     ]
 
 
-def build_markdown_checks(files: Sequence[str], fix: bool = False) -> list[Check]:
+def build_markdown_checks(
+    files: Sequence[str], fix: bool = False, check_links: bool = False
+) -> list[Check]:
     # Deliberately scoped to git-tracked files, like every other check here,
     # rather than the raw filesystem glob `./**/*.md` the original workflow's
     # lychee-action step used -- so an untracked/generated .md file (e.g. in
@@ -393,18 +395,23 @@ def build_markdown_checks(files: Sequence[str], fix: bool = False) -> list[Check
     )
     # lychee has no autofix (it's a link checker); it runs the same, and
     # stays non-fatal, in --fix mode.
-    checks.append(
-        Check(
-            "markdown: lychee",
-            command=["lychee", "--no-progress", *md_files],
-            fatal=False,
+    if check_links:
+        checks.append(
+            Check(
+                "markdown: lychee",
+                command=["lychee", "--no-progress", *md_files],
+                fatal=False,
+            )
         )
-    )
     return checks
 
 
 def build_checks(
-    languages: dict[str, str], files: Sequence[str], root: Path, fix: bool = False
+    languages: dict[str, str],
+    files: Sequence[str],
+    root: Path,
+    fix: bool = False,
+    check_links: bool = False,
 ) -> list[Check]:
     """Build the list of checks to run for the detected languages.
 
@@ -415,6 +422,7 @@ def build_checks(
     :param fix: Autofix what each tool can (formatting, safe lint fixes)
         instead of only checking. A tool with no fix mode (a type checker, a
         linter with no safe autofix, a link checker) runs the same either way.
+    :param check_links: Include the non-fatal Lychee check for Markdown links.
     """
     checks: list[Check] = []
     if "python" in languages:
@@ -438,7 +446,7 @@ def build_checks(
     if "lua" in languages:
         checks += build_lua_checks(fix)
     if "markdown" in languages:
-        checks += build_markdown_checks(files, fix)
+        checks += build_markdown_checks(files, fix, check_links)
     return checks
 
 
@@ -624,6 +632,7 @@ def lint_repo(
     fix: bool = False,
     test: bool = False,
     test_only: bool = False,
+    check_links: bool = False,
 ) -> list[str]:
     """Detect the languages of a git repository and lint each of them.
 
@@ -641,6 +650,7 @@ def lint_repo(
         `build_test_checks`.
     :param test_only: Run only each language's test suite; skip linting
         entirely. Implies `test`.
+    :param check_links: Include the non-fatal Lychee check for Markdown links.
     :return: The names of the fatal checks that failed (empty if everything
         passed).
     """
@@ -669,7 +679,7 @@ def lint_repo(
     )
     checks: list[Check] = []
     if not test_only:
-        checks += build_checks(selected, files, root, fix)
+        checks += build_checks(selected, files, root, fix, check_links)
     if test or test_only:
         checks += build_test_checks(selected, files, root)
     if not checks:
@@ -745,6 +755,11 @@ def parse_args(args=None, namespace=None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--check-links",
+        action="store_true",
+        help="Check Markdown links with Lychee (non-fatal; skipped by default).",
+    )
+    parser.add_argument(
         "--test",
         dest="test",
         action="store_true",
@@ -777,6 +792,7 @@ def main() -> int:
             fix=args.fix,
             test=args.test,
             test_only=args.test_only,
+            check_links=args.check_links,
         )
     except Exception as e:
         print(str(e), file=sys.stderr)
