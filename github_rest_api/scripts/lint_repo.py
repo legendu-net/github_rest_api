@@ -366,8 +366,36 @@ def build_lua_checks(fix: bool = False) -> list[Check]:
     ]
 
 
+def _python_tool_env(root: Path | None) -> dict[str, str] | None:
+    """Return an env dict prepending `root/.venv/bin` to PATH.
+
+    The directory is prepended unconditionally (whenever `root` is given),
+    even if it doesn't exist yet: an earlier `python-project: uv sync` step
+    may create it before the Markdown checks run, and a nonexistent PATH
+    entry is harmless. It is made absolute so it doesn't get re-resolved
+    against the subprocess's `cwd`. Running tools directly from `.venv/bin`
+    via PATH uses the virtualenv's own interpreter and plugins (for both
+    `uv` and non-`uv` environments) without a `uv run` re-sync that could
+    strip optional extras installed by `uv sync --all-extras`, and still
+    falls back to global tools on PATH when a tool isn't installed in
+    `.venv`.
+    """
+    if root is None:
+        return None
+    venv_bin = root.resolve() / ".venv" / "bin"
+    current_path = os.environ.get("PATH", os.defpath)
+    new_path = (
+        f"{venv_bin}{os.pathsep}{current_path}" if current_path else str(venv_bin)
+    )
+    return {"PATH": new_path}
+
+
 def build_markdown_checks(
-    files: Sequence[str], fix: bool = False, check_links: bool = False
+    files: Sequence[str],
+    fix: bool = False,
+    check_links: bool = False,
+    check_spelling: bool = False,
+    root: Path | None = None,
 ) -> list[Check]:
     # Deliberately scoped to git-tracked files, like every other check here,
     # rather than the raw filesystem glob `./**/*.md` the original workflow's
@@ -376,6 +404,7 @@ def build_markdown_checks(
     md_files = _files_matching(files, "*.md")
     if not md_files:
         return []
+    tool_env = _python_tool_env(root)
     # Options such as `--number` are left to the repository's own
     # `.mdformat.toml` (which mdformat looks up per file), rather than being
     # hard-coded here.
@@ -385,14 +414,19 @@ def build_markdown_checks(
             command=_cmd(
                 fix, ["mdformat", *md_files], ["mdformat", "--check", *md_files]
             ),
+            env=tool_env,
         )
     ]
-    checks.append(
-        Check(
-            "markdown: codespell",
-            command=_cmd(fix, ["codespell", "-w", *md_files], ["codespell", *md_files]),
+    if check_spelling:
+        checks.append(
+            Check(
+                "markdown: codespell",
+                command=_cmd(
+                    fix, ["codespell", "-w", *md_files], ["codespell", *md_files]
+                ),
+                env=tool_env,
+            )
         )
-    )
     # lychee has no autofix (it's a link checker); it runs the same, and
     # stays non-fatal, in --fix mode.
     if check_links:
@@ -412,6 +446,7 @@ def build_checks(
     root: Path,
     fix: bool = False,
     check_links: bool = False,
+    check_spelling: bool = False,
 ) -> list[Check]:
     """Build the list of checks to run for the detected languages.
 
@@ -423,6 +458,7 @@ def build_checks(
         instead of only checking. A tool with no fix mode (a type checker, a
         linter with no safe autofix, a link checker) runs the same either way.
     :param check_links: Include the non-fatal Lychee check for Markdown links.
+    :param check_spelling: Include the codespell check for Markdown spelling.
     """
     checks: list[Check] = []
     if "python" in languages:
@@ -446,7 +482,13 @@ def build_checks(
     if "lua" in languages:
         checks += build_lua_checks(fix)
     if "markdown" in languages:
-        checks += build_markdown_checks(files, fix, check_links)
+        checks += build_markdown_checks(
+            files,
+            fix,
+            check_links=check_links,
+            check_spelling=check_spelling,
+            root=root,
+        )
     return checks
 
 
@@ -526,8 +568,8 @@ def build_test_checks(
     return checks
 
 
-def _missing_tool(tool: str) -> str | None:
-    return None if shutil.which(tool) else tool
+def _missing_tool(tool: str, path: str | None = None) -> str | None:
+    return None if shutil.which(tool, path=path) else tool
 
 
 def run_check(
@@ -551,7 +593,10 @@ def run_check(
     if in_ci:
         print(f"::group::{check.name}", flush=True)
     try:
-        missing = [tool for tool in check.requires if _missing_tool(tool)]
+        tool_path = check.env.get("PATH") if check.env else None
+        missing = [
+            tool for tool in check.requires if _missing_tool(tool, path=tool_path)
+        ]
         if missing:
             message = f"missing tool(s) {', '.join(missing)} required for check '{check.name}'"
             if on_missing_tool == "skip":
@@ -633,6 +678,7 @@ def lint_repo(
     test: bool = False,
     test_only: bool = False,
     check_links: bool = False,
+    check_spelling: bool = False,
 ) -> list[str]:
     """Detect the languages of a git repository and lint each of them.
 
@@ -651,6 +697,7 @@ def lint_repo(
     :param test_only: Run only each language's test suite; skip linting
         entirely. Implies `test`.
     :param check_links: Include the non-fatal Lychee check for Markdown links.
+    :param check_spelling: Include the codespell check for Markdown spelling.
     :return: The names of the fatal checks that failed (empty if everything
         passed).
     """
@@ -679,7 +726,14 @@ def lint_repo(
     )
     checks: list[Check] = []
     if not test_only:
-        checks += build_checks(selected, files, root, fix, check_links)
+        checks += build_checks(
+            selected,
+            files,
+            root,
+            fix,
+            check_links=check_links,
+            check_spelling=check_spelling,
+        )
     if test or test_only:
         checks += build_test_checks(selected, files, root)
     if not checks:
@@ -720,7 +774,11 @@ def parse_args(args=None, namespace=None) -> argparse.Namespace:
         help=(
             "Only lint these languages, e.g. for an image that only has some "
             "languages' tools installed (default: every language detected in "
-            "the repository)."
+            "the repository). Leaving out 'python' also skips the Python "
+            "project's 'uv sync --all-extras' step, so the Markdown checks use "
+            "the project's '.venv' as-is (falling back to global tools on PATH "
+            "for any tool not in '.venv'); run 'uv sync --all-extras' first if "
+            "'.venv' may be stale."
         ),
     )
     parser.add_argument(
@@ -760,6 +818,11 @@ def parse_args(args=None, namespace=None) -> argparse.Namespace:
         help="Check Markdown links with Lychee (non-fatal; skipped by default).",
     )
     parser.add_argument(
+        "--check-spelling",
+        action="store_true",
+        help="Check Markdown spelling with codespell (skipped by default).",
+    )
+    parser.add_argument(
         "--test",
         dest="test",
         action="store_true",
@@ -793,6 +856,7 @@ def main() -> int:
             test=args.test,
             test_only=args.test_only,
             check_links=args.check_links,
+            check_spelling=args.check_spelling,
         )
     except Exception as e:
         print(str(e), file=sys.stderr)
