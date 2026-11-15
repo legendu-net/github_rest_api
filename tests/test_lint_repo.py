@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -186,7 +187,9 @@ def test_build_markdown_checks_leaves_numbering_to_mdformat_toml(tmp_path):
     (tmp_path / "docs" / "SKILL.md").write_text("")
     (tmp_path / "AGENTS.md").write_text("")
     (tmp_path / "README.md").write_text("")
-    checks = build_markdown_checks(["README.md", "AGENTS.md", "docs/SKILL.md"])
+    checks = build_markdown_checks(
+        ["README.md", "AGENTS.md", "docs/SKILL.md"], check_spelling=True
+    )
     by_name = {c.name: c for c in checks}
     # SKILL.md/AGENTS.md get no hard-coded `--number`: one mdformat check
     # covers every file, and `.mdformat.toml` controls numbering.
@@ -231,7 +234,7 @@ def test_build_checks_dispatches_by_detected_language(tmp_path):
     checks = build_checks(languages, files, tmp_path)
     names = [c.name for c in checks]
     assert "bash: shfmt" in names
-    assert "markdown: codespell" in names
+    assert "markdown: mdformat" in names
     assert not any(name.startswith("python") for name in names)
 
 
@@ -551,7 +554,10 @@ def test_build_markdown_checks_fix_mode(tmp_path):
     (tmp_path / "AGENTS.md").write_text("")
     (tmp_path / "README.md").write_text("")
     checks = build_markdown_checks(
-        ["README.md", "AGENTS.md", "docs/SKILL.md"], fix=True, check_links=True
+        ["README.md", "AGENTS.md", "docs/SKILL.md"],
+        fix=True,
+        check_links=True,
+        check_spelling=True,
     )
     by_name = {c.name: c.command for c in checks}
     assert by_name["markdown: mdformat"] == [
@@ -939,7 +945,7 @@ def test_main_passes_test_and_test_only_through(mock_lint_repo, monkeypatch):
 
 def test_build_markdown_checks_skips_lychee_by_default():
     checks = build_markdown_checks(["README.md"])
-    assert [c.name for c in checks] == ["markdown: mdformat", "markdown: codespell"]
+    assert [c.name for c in checks] == ["markdown: mdformat"]
 
 
 @patch("github_rest_api.scripts.lint_repo.run_checks", return_value=[])
@@ -964,3 +970,115 @@ def test_main_passes_check_links_through(mock_lint_repo, monkeypatch):
     monkeypatch.setattr("sys.argv", ["lint_repo", "--check-links"])
     assert main() == 0
     assert mock_lint_repo.call_args.kwargs["check_links"] is True
+
+
+@patch("github_rest_api.scripts.lint_repo.run_checks", return_value=[])
+@pytest.mark.parametrize("check_spelling", [False, True])
+def test_lint_repo_check_spelling(mock_run_checks, tmp_path, check_spelling):
+    with patch(
+        "github_rest_api.scripts.lint_repo.list_tracked_files",
+        return_value=["README.md"],
+    ):
+        lint_repo(root=tmp_path, check_spelling=check_spelling)
+    checks = mock_run_checks.call_args.args[0]
+    assert any(c.name == "markdown: codespell" for c in checks) is check_spelling
+
+
+def test_parse_args_check_spelling():
+    assert parse_args([]).check_spelling is False
+    assert parse_args(["--check-spelling"]).check_spelling is True
+
+
+@patch("github_rest_api.scripts.lint_repo.lint_repo", return_value=[])
+def test_main_passes_check_spelling_through(mock_lint_repo, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lint_repo", "--check-spelling"])
+    assert main() == 0
+    assert mock_lint_repo.call_args.kwargs["check_spelling"] is True
+
+
+def _make_venv_tool(root: Path, tool: str) -> Path:
+    venv_bin = root / ".venv" / "bin"
+    venv_bin.mkdir(parents=True, exist_ok=True)
+    exe = venv_bin / tool
+    exe.write_text("#!/bin/sh\nexit 0\n")
+    exe.chmod(0o755)
+    return exe
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [
+        lambda root: _make_venv_tool(root, "mdformat"),
+        lambda root: None,
+    ],
+    ids=["venv", "empty"],
+)
+def test_build_markdown_checks_prepends_venv_bin(tmp_path, setup):
+    setup(tmp_path)
+    checks = build_markdown_checks(["README.md"], check_spelling=True, root=tmp_path)
+    by_name = {c.name: c for c in checks}
+    assert by_name["markdown: mdformat"].command == ["mdformat", "--check", "README.md"]
+    assert by_name["markdown: codespell"].command == ["codespell", "README.md"]
+    venv_bin = str(tmp_path / ".venv" / "bin")
+    env = by_name["markdown: mdformat"].env
+    assert env is not None
+    assert env["PATH"].split(os.pathsep)[0] == venv_bin
+    assert by_name["markdown: codespell"].env == env
+
+
+def test_build_markdown_checks_unset_path_falls_back_to_defpath(tmp_path, monkeypatch):
+    monkeypatch.delenv("PATH", raising=False)
+    checks = build_markdown_checks(["README.md"], root=tmp_path)
+    env = checks[0].env
+    assert env is not None
+    assert env["PATH"] == f"{tmp_path / '.venv' / 'bin'}{os.pathsep}{os.defpath}"
+
+
+def test_build_markdown_checks_without_root_leaves_env_none():
+    checks = build_markdown_checks(["README.md"], check_spelling=True)
+    assert all(c.env is None for c in checks)
+
+
+def test_run_check_resolves_required_tool_from_check_env_path(tmp_path, monkeypatch):
+    _make_venv_tool(tmp_path, "custom_mdformat")
+    monkeypatch.setenv("PATH", "/nonexistent")
+    check = Check(
+        "markdown: custom_mdformat",
+        command=["custom_mdformat", "--check", "README.md"],
+        env={"PATH": f"{tmp_path / '.venv' / 'bin'}{os.pathsep}/nonexistent"},
+    )
+    assert run_check(check, cwd=tmp_path) == "pass"
+
+
+def test_run_checks_picks_up_venv_tool_created_by_earlier_sync_check(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n")
+    (tmp_path / "README.md").write_text("# Demo\n")
+    marker = tmp_path / "ran_from_venv"
+    monkeypatch.setenv("PATH", "/nonexistent")
+    # Build markdown checks BEFORE .venv exists on disk (simulating a fresh
+    # clone before `python-project: uv sync` has run).
+    md_checks = build_markdown_checks(["README.md"], root=tmp_path)
+
+    def _populate_venv(cwd: Path) -> bool:
+        exe = _make_venv_tool(cwd, "mdformat")
+        exe.write_text(f"#!/bin/sh\n: > {marker}\nexit 0\n")
+        return True
+
+    checks = [Check("python-project: uv sync", run=_populate_venv), *md_checks]
+    assert run_checks(checks, cwd=tmp_path) == []
+    assert marker.is_file()
+
+
+def test_build_markdown_checks_resolves_relative_root_for_subprocess_cwd(
+    tmp_path, monkeypatch
+):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "README.md").write_text("# Demo\n")
+    _make_venv_tool(sub, "mdformat")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "/nonexistent")
+    checks = build_markdown_checks(["README.md"], root=Path("sub"))
+    assert run_check(checks[0], cwd=Path("sub")) == "pass"
